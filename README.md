@@ -1,76 +1,192 @@
-# Remote Desktop (in-editor) — prototype
+# VNC Desktop View
 
-Shows the remote machine's desktop in a VS Code tab. The desktop is streamed over
-the connection VS Code already has (Remote-SSH, Remote Tunnels, WSL…), so no
-ports are opened and nothing is installed on your own machine.
+A Visual Studio Code extension that shows your remote machine's desktop in an editor tab — and lets you control it — over the connection VS Code already has (Remote Tunnels, Remote-SSH or WSL).
 
+No ports to open, no VPN, nothing to install on your own machine. On a Windows remote it works with no setup at all.
+
+> **Preview.** Windows remotes are fully supported; macOS and Linux remotes work with a VNC server you set up yourself.
+
+![VNC Desktop View screenshot](resources/screenshot.png)
+
+## Features
+
+### The Desktop in an Editor Tab
+
+Open the remote desktop next to your code, split it, or drag it into its own window. Mouse, keyboard and scaling work as you'd expect; the view scales to fit the tab or shows 1:1.
+
+### Uses Your Existing Connection
+
+The screen travels through VS Code's own connection to the remote, so whatever already works for your code — Remote Tunnels across the internet, Remote-SSH, WSL — works for the desktop too. The VNC server only accepts connections from the remote machine itself; nothing is exposed to the network.
+
+### Zero Setup on Windows
+
+In **application mode** (the default on Windows), the extension downloads TightVNC once, then runs it only while a desktop tab is open — as an ordinary program, without administrator rights, with a new random port and password each time. Close the tab and it's gone.
+
+### Optional Full Access
+
+Application mode can't see or control UAC prompts, the lock screen or administrator windows (Windows doesn't allow that for ordinary programs). **Full-access mode** installs TightVNC as a Windows service, once, so all of those work too, including Ctrl+Alt+Del.
+
+### Smooth Over Slow Links
+
+VNC normally waits a full round trip for every screen update, which makes it sluggish over tunnels. The extension requests updates from right next to the server and keeps a bounded amount of data in flight, giving around 45 fps for everyday desktop use over an internet tunnel instead of single digits.
+
+### Tells You When Input Is Blocked
+
+If an administrator window, a UAC prompt or the lock screen is in front in application mode, a banner explains why clicks and keys aren't getting through, and offers full-access mode.
+
+### Clipboard
+
+Text copied on the remote desktop lands on your clipboard automatically. **Paste to remote** sends your clipboard the other way.
+
+## Requirements
+
+- VS Code 1.90 or later, connected to the remote machine with **Remote Tunnels**, **Remote-SSH** or **WSL**
+- **Windows remote** (Windows 10/11): internet access to `tightvnc.com` the first time; administrator rights only for full-access mode
+- **macOS or Linux remote**: a VNC server you start yourself (see [Getting Started](#getting-started))
+
+## Getting Started
+
+### Windows remote
+
+1. Connect VS Code to the remote machine and install the extension there (VS Code offers to install it on the remote side)
+2. Run **VNC Desktop View: Open Desktop** from the Command Palette
+3. The first time, TightVNC is downloaded (~2.5 MB); then the desktop opens in a tab
+
+For UAC prompts, the lock screen and administrator windows, run **VNC Desktop View: Install Full-Access Mode**. This needs administrator rights once: either approve the UAC prompt on the remote machine's own screen, or run VS Code's terminal as an administrator — for example over SSH as an admin user, which needs no UAC prompt.
+
+### macOS remote
+
+Turn on **System Settings → General → Sharing → Screen Sharing**, and under its ⓘ options enable *VNC viewers may control screen with password*. Then run **Open Desktop**; you'll be asked for that password once.
+
+### Linux remote (X11)
+
+Start a VNC server that only listens on localhost, for example:
+
+```bash
+x11vnc -storepasswd
+x11vnc -localhost -display :0 -rfbauth ~/.vnc/passwd -forever
 ```
-your machine: editor tab (noVNC)  <-- webview.postMessage -->  remote: extension host (relay)  <-- TCP 127.0.0.1:5900 -->  VNC server
-```
 
-## Layout
+Then run **Open Desktop**.
 
-| File | Runs on | Purpose |
-|---|---|---|
-| `src/extension.ts` | remote | Commands |
-| `src/session.ts` | remote | One tab: webview panel, password storage, clipboard |
-| `src/relay.ts` | remote | TCP ⇄ webview message pipe, with batching and backpressure. Also requests updates from the server itself instead of waiting a round trip for each viewer request, limited by how much data the viewer has confirmed receiving |
-| `src/webview/main.ts` | your machine | noVNC viewer + `PostMessageChannel` (a WebSocket look-alike) |
-| `src/testServer.ts` | remote | Built-in fake VNC server for testing |
-| `src/windows/tightvncApp.ts` | remote | Windows default: TightVNC in application mode (no admin) |
-| `src/windows/service.ts`, `scripts/setup-windows.ps1` | remote | Windows optional: full-access TightVNC service |
-| `src/setup.ts` | remote | Manual setup instructions for macOS / Linux |
+## Modes
 
-## VNC server modes (`remoteDesktop.server`)
+The `vncDesktopView.server` setting chooses the VNC server. The toolbar badge and tab title show which one a tab uses.
 
-| Mode | Admin needed | UAC prompts, lock screen, Ctrl+Alt+Del | How it works |
+| Mode | Admin rights | UAC prompts, lock screen, admin windows | What it is |
 |---|---|---|---|
-| **app** (Windows default) | No | No | Downloads TightVNC once (hash-checked), unpacks it into the extension's storage folder, and runs `tvnserver.exe -run` only while a desktop tab is open, with a new random port and password each time. A user's own TightVNC application-mode settings (`HKCU\Software\TightVNC\Server`) are backed up and restored. |
-| **service** | Once | Yes | **Install Full-Access Mode** installs TightVNC as a service, localhost-only, with a random password handed to the extension. Records itself in `%ProgramData%\vscode-remote-desktop\service.json`. **Remove Full-Access Mode** uninstalls it only if the extension installed it. |
-| **custom** | — | Depends | Any VNC server at `remoteDesktop.host`/`port` (macOS Screen Sharing, x11vnc, …). |
+| **Application mode** (`app`) | No | No | TightVNC run as an ordinary program while a tab is open (Windows) |
+| **Full access** (`service`) | Once | Yes | TightVNC installed as a Windows service, localhost-only |
+| **Custom** (`custom`) | — | Depends on the server | Any VNC server at `vncDesktopView.host` / `vncDesktopView.port` |
 
-`auto` (the default) picks *service* when it is installed, otherwise *app* on Windows and *custom* elsewhere.
+`auto` (the default) uses full access when it's installed, otherwise application mode on Windows and custom elsewhere.
 
-Note: TightVNC briefly blocks all connections from 127.0.0.1 after a failed login, so a wrong saved password causes a short lockout.
+## Commands
 
-The extension is a *workspace* extension (`extensionKind: ["workspace"]`), so when
-you're connected to a remote it is installed and runs on the remote side.
+| Command | Description |
+|---------|-------------|
+| **Open Desktop** | Show the remote desktop in a new tab |
+| **Install Full-Access Mode** | Install the TightVNC service on a Windows remote (UAC prompts, lock screen) |
+| **Remove Full-Access Mode** | Remove it again (uninstalls TightVNC only if the extension installed it) |
+| **Open Test Desktop** | Built-in fake desktop for checking speed and input |
+| **Forget Saved VNC Password** | Remove the stored password for custom / full-access servers |
 
-## Try it
+## Settings
 
-```sh
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `vncDesktopView.server` | `auto` | Which VNC server to use (see [Modes](#modes)) |
+| `vncDesktopView.host` | `127.0.0.1` | Custom mode: server address, as seen from the remote machine |
+| `vncDesktopView.port` | `5900` | Custom mode: server port |
+| `vncDesktopView.scaleToFit` | `true` | Scale the desktop to fit the tab |
+
+## Security & Privacy
+
+- **No telemetry.** The extension sends nothing anywhere. Screen, keyboard and mouse data only travel over your existing VS Code remote connection.
+- **Localhost only.** Every VNC server the extension sets up accepts connections only from the remote machine itself, and full-access mode disables TightVNC's inbound firewall rule. (If TightVNC was already installed and you choose to keep its settings, they're left as they were.)
+- **Downloads.** On Windows, the extension downloads the official TightVNC 2.8.89 installer from `https://www.tightvnc.com` and checks its SHA-256 before using it. In application mode it is only unpacked (not installed) into the extension's storage folder.
+- **Changes to the remote machine.**
+  - Application mode writes TightVNC settings to `HKCU\Software\TightVNC\Server` while a tab is open, and puts back any settings you had there afterwards.
+  - Full-access mode installs the TightVNC service and writes `%ProgramData%\vnc-desktop-view\service.json`.
+- **Passwords.** Application mode uses a new random password for every session and never stores it. Full-access and custom passwords are kept in VS Code's secret storage. VNC passwords are limited to 8 characters, which is why the servers only accept local connections.
+- **Brute-force lockout.** After a failed login TightVNC briefly refuses all connections from the same machine, so a wrong saved password causes a short lockout.
+
+## Known Issues
+
+- **Mac keyboards:** ⌘ is sent as the Windows key rather than Ctrl, and VS Code handles some shortcuts (such as ⌘W) before the desktop sees them
+- **Clipboard:** local → remote needs the **Paste to remote** button
+- **macOS and Linux remotes:** server setup isn't automated yet
+- **After a reboot**, the remote is only reachable once someone has logged in (VS Code's tunnel starts at login)
+
+## Uninstalling
+
+Uninstalling the extension removes the application-mode files and settings automatically. **Remove full-access mode first** (run **Remove Full-Access Mode**), since the extension can't remove a Windows service without administrator rights.
+
+## Development
+
+### Prerequisites
+
+- Node.js 20+
+- VS Code 1.90+
+
+### Build
+
+```bash
 npm install
 npm run build
 ```
 
-Then press **F5** (Run Extension) and, in the new window:
+### Test
 
-1. **Remote Desktop: Open Test Desktop** → *Light* or *Stress*. Uses the built-in
-   fake server, so nothing needs installing. Drag to draw; press any key to change
-   the square's colour. The toolbar shows throughput and frame rate.
-2. **Remote Desktop: Open Desktop** shows the real desktop. On Windows this uses
-   application mode with no setup.
-3. Optionally, **Remote Desktop: Install Full-Access Mode** for UAC prompts and the lock screen.
+```bash
+npm test
+```
 
-To test from another machine (for example a Mac connected to a Windows remote), package
-it with `npx @vscode/vsce package` and install the `.vsix` into the remote window
-(Extensions view → `…` → *Install from VSIX*).
+On Windows, `test/app-mode-test.ts` exercises application mode for real (download, start, login, settings restore) and `test/browser-harness.ts` drives the viewer in headless Edge/Chrome.
 
-## Tests
+### Watch
 
-- `npm test` — headless RFB handshake and update test against the test server.
-- `test/app-mode-test.ts` — Windows only: real download/start/login/stop of
-  application mode, including the settings backup and restore.
-- `test/browser-harness.ts` — loads the real viewer bundle in headless Edge/Chrome
-  with a stand-in for VS Code's messaging, drives mouse and keyboard, and saves
-  a screenshot.
+```bash
+npm run watch
+```
 
-## Known gaps
+### Run
 
-- Keyboard: VS Code may grab some shortcuts (e.g. ⌘W) before the remote sees them;
-  no ⌘→Ctrl mapping for Mac users yet.
-- Clipboard: remote→local is automatic; local→remote is the *Paste to remote* button.
-- macOS and Linux server setup is instructions only, not automated.
-- Uninstalling the extension doesn't yet remove the full-access service (use *Remove Full-Access Mode* first),
-  or the unpacked TightVNC files in the extension's storage folder.
-- Sharing the physical screen: VNC shows the remote's real display, unlike RDP.
+Press **F5** in VS Code to launch the Extension Development Host. Over Remote Tunnels the debugger may fail to attach; use **Run Without Debugging** (Ctrl+F5) instead.
+
+### Package
+
+```bash
+npm run package
+```
+
+### Project Structure
+
+```
+src/
+├── extension.ts              # Commands, mode selection
+├── session.ts                # One desktop tab: webview panel, credentials, clipboard
+├── relay.ts                  # TCP <-> webview message pipe, flow control, update streaming
+├── protocol.ts               # Messages between the tab and the extension
+├── testServer.ts             # Built-in fake VNC server
+├── setup.ts                  # macOS / Linux setup instructions
+├── webview/
+│   └── main.ts               # Viewer: noVNC, toolbar, banner
+└── windows/
+    ├── tightvncApp.ts        # Application mode
+    ├── service.ts            # Full-access mode
+    └── foregroundWatcher.ts  # Detects when Windows blocks remote input
+scripts/
+├── setup-windows.ps1         # Full-access install / removal (runs elevated)
+├── foreground-watch.ps1      # Helper for foregroundWatcher.ts
+├── uninstall.js              # Cleanup when the extension is uninstalled
+└── build-notices.mjs         # Generates ThirdPartyNotices.txt
+test/
+├── relay-test.mjs            # RFB protocol test against the test server
+├── app-mode-test.ts          # Application mode on a real Windows machine
+└── browser-harness.ts        # Viewer end-to-end in a headless browser
+```
+
+## License
+
+See [LICENSE](LICENSE) for details. Bundled third-party code (noVNC, pako) is listed in [ThirdPartyNotices.txt](ThirdPartyNotices.txt).

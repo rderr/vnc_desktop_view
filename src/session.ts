@@ -35,7 +35,7 @@ export class DesktopSession {
   ) {
     const distUri = vscode.Uri.joinPath(context.extensionUri, 'dist');
     this.panel = vscode.window.createWebviewPanel(
-      'remoteDesktop',
+      'vncDesktopView',
       tabTitle(target.label, target.mode),
       vscode.ViewColumn.Active,
       {
@@ -77,7 +77,7 @@ export class DesktopSession {
         this.relay?.dispose();
         this.conn = msg.conn;
         const conn = msg.conn;
-        const cfg = vscode.workspace.getConfiguration('remoteDesktop');
+        const cfg = vscode.workspace.getConfiguration('vncDesktopView');
         void this.post({
           type: 'init', scaleToFit: cfg.get('scaleToFit', true), label: this.target.label, fullAccess: this.target.fullAccess,
           mode: this.target.mode, server: `${this.target.host}:${this.target.port}`,
@@ -129,7 +129,7 @@ export class DesktopSession {
         void this.post({ type: 'paste', text: await vscode.env.clipboard.readText() });
         break;
       case 'installFullAccess':
-        void vscode.commands.executeCommand('remoteDesktop.installService');
+        void vscode.commands.executeCommand('vncDesktopView.installService');
         break;
     }
   }

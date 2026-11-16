@@ -98,7 +98,7 @@ const MODES: Record<string, { label: string; detail: string }> = {
   },
   custom: {
     label: 'Custom server',
-    detail: 'Connected to the VNC server set in remoteDesktop.host / remoteDesktop.port.',
+    detail: 'Connected to the VNC server set in vncDesktopView.host / vncDesktopView.port.',
   },
   test: {
     label: 'Test server',
@@ -184,7 +184,7 @@ window.addEventListener('message', (event: MessageEvent<ToWebview>) => {
       if (!msg.fullAccess) {
         const cad = $<HTMLButtonElement>('cad');
         cad.disabled = true;
-        cad.title = 'Not available in application mode. Run "Remote Desktop: Install Full-Access Mode" for Ctrl+Alt+Del, UAC prompts and the lock screen.';
+        cad.title = 'Not available in application mode. Run "VNC Desktop View: Install Full-Access Mode" for Ctrl+Alt+Del, UAC prompts and the lock screen.';
       }
       scaleToFit = msg.scaleToFit;
       fitBtn.setAttribute('aria-pressed', String(scaleToFit));

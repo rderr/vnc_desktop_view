@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke-linecap="round" stroke-linejoin="round">
+  <!-- Tile (same dark tone as the gallery banner) -->
+  <rect x="0" y="0" width="24" height="24" fill="#1e1e1e" />
+  <g stroke="#c9cbf0" stroke-width="1.2">
+    <!-- Monitor -->
+    <rect x="3" y="4.5" width="18" height="12" rx="1.5" />
+    <!-- Stand -->
+    <line x1="12" y1="16.5" x2="12" y2="19" />
+    <line x1="8.5" y1="19.5" x2="15.5" y2="19.5" />
+  </g>
+  <!-- A window on the remote screen -->
+  <rect x="5" y="6.5" width="9" height="2" fill="#6fa8dc" opacity="0.9" />
+  <rect x="5" y="8.5" width="9" height="5.5" fill="#6fa8dc" opacity="0.35" />
+  <rect x="15" y="6.5" width="4" height="7.5" fill="#6fa8dc" opacity="0.2" />
+  <!-- Mouse pointer: you are controlling it -->
+  <path d="M13.2 9.6 L13.2 15.4 L14.6 14.1 L15.6 16.2 L16.6 15.7 L15.6 13.7 L17.5 13.6 Z"
+        fill="#e8eaff" stroke="#1e1e1e" stroke-width="0.6" />
+</svg>

@@ -26,7 +26,7 @@ const MSI_SHA256 = 'dff8d7e40a81e0b86ba1d9d5cc0d4f22d08354c50c9cbdc0825bbb6ccfb1
 
 // Application mode always reads its settings from here.
 const REG_KEY = 'HKCU\\Software\\TightVNC\\Server';
-const OUR_MARKER = 'VSCodeRemoteDesktop'; // extra value so we can recognise our own settings
+const OUR_MARKER = 'VncDesktopView'; // extra value so we can recognise our own settings
 
 export interface AppServerLease {
   port: number;
@@ -170,7 +170,7 @@ export class TightVncAppServer {
         // our settings location, so don't interfere with it.
         throw new Error(
           'TightVNC is already running in application mode for your account. Close it from its tray icon, ' +
-          'or set "remoteDesktop.server" to "custom" to connect to it instead.');
+          'or set "vncDesktopView.server" to "custom" to connect to it instead.');
       }
     }
   }
@@ -315,7 +315,7 @@ function samePath(a: string, b: string): boolean {
 
 function download(url: string, dest: string, redirects = 5): Promise<void> {
   return new Promise((resolve, reject) => {
-    https.get(url, { headers: { 'User-Agent': 'vscode-remote-desktop' } }, (res) => {
+    https.get(url, { headers: { 'User-Agent': 'vnc-desktop-view' } }, (res) => {
       if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location && redirects > 0) {
         res.resume();
         download(new URL(res.headers.location, url).toString(), dest, redirects - 1).then(resolve, reject);

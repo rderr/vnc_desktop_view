@@ -16,7 +16,7 @@ param([int]$ParentPid = 0, [int]$IntervalMs = 1000)
 
 $ErrorActionPreference = 'Stop'
 
-Add-Type -Namespace RemoteDesktop -Name Native -UsingNamespace System.Text -MemberDefinition @'
+Add-Type -Namespace VncDesktopView -Name Native -UsingNamespace System.Text -MemberDefinition @'
 [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
 [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr hwnd, out uint pid);
 [DllImport("user32.dll", SetLastError = true)] static extern IntPtr OpenInputDesktop(uint flags, bool inherit, uint access);
@@ -83,7 +83,7 @@ public static string InputDesktopName() {
 }
 '@
 
-$self = [RemoteDesktop.Native]::OwnIntegrity()
+$self = [VncDesktopView.Native]::OwnIntegrity()
 $last = ''
 
 while ($true) {
@@ -91,14 +91,14 @@ while ($true) {
 
     $state = [ordered]@{ blocked = $false }
     try {
-        $desktop = [RemoteDesktop.Native]::InputDesktopName()
+        $desktop = [VncDesktopView.Native]::InputDesktopName()
         if ($desktop -ne 'Default') {
             $state.blocked = $true
             $state.reason = 'secure'
         } else {
-            $fgPid = [RemoteDesktop.Native]::ForegroundPid()
+            $fgPid = [VncDesktopView.Native]::ForegroundPid()
             if ($fgPid -ne 0) {
-                $level = [RemoteDesktop.Native]::IntegrityOfPid($fgPid)
+                $level = [VncDesktopView.Native]::IntegrityOfPid($fgPid)
                 if ($level -eq -1 -or $level -gt $self) {
                     $p = Get-Process -Id $fgPid -ErrorAction SilentlyContinue
                     $state.blocked = $true

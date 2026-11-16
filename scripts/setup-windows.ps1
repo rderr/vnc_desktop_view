@@ -1,4 +1,4 @@
-# Full-access mode for the Remote Desktop extension: TightVNC Server as a
+# Full-access mode for the VNC Desktop View extension: TightVNC Server as a
 # Windows service, so the desktop tab can also show UAC prompts, the lock
 # screen and the sign-in screen.
 #
@@ -6,7 +6,7 @@
 #   over the VS Code connection; nothing is reachable from the network).
 # - Uses a random password that is handed to the extension, never typed.
 # - Picks port 5900, or a free port from 5917 if 5900 belongs to other software.
-# - Records what it did in %ProgramData%\vscode-remote-desktop\service.json so
+# - Records what it did in %ProgramData%\vnc-desktop-view\service.json so
 #   the extension can find the port, and so removal only uninstalls TightVNC
 #   if this script installed it.
 #
@@ -21,7 +21,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $RegPath    = 'HKLM:\SOFTWARE\TightVNC\Server'
-$MarkerDir  = Join-Path $env:ProgramData 'vscode-remote-desktop'
+$MarkerDir  = Join-Path $env:ProgramData 'vnc-desktop-view'
 $MarkerFile = Join-Path $MarkerDir 'service.json'
 
 function Test-Admin {
@@ -141,7 +141,7 @@ function Wait-RfbGreeting([int]$port) {
 # ---- uninstall -----------------------------------------------------------------
 
 if ($Uninstall) {
-    Write-Host '== Remote Desktop: remove full-access mode ==' -ForegroundColor Cyan
+    Write-Host '== VNC Desktop View: remove full-access mode ==' -ForegroundColor Cyan
     $marker = Get-Marker
     if ($marker -and $marker.installedBy -eq 'extension') {
         $code = Get-TightVncProductCode
@@ -162,7 +162,7 @@ if ($Uninstall) {
 
 # ---- install / configure ---------------------------------------------------------
 
-Write-Host '== Remote Desktop: full-access mode setup ==' -ForegroundColor Cyan
+Write-Host '== VNC Desktop View: full-access mode setup ==' -ForegroundColor Cyan
 $marker = Get-Marker
 $installed = Test-Path $RegPath
 $mode = 'install'
@@ -251,7 +251,7 @@ $password = $null
 if (Wait-RfbGreeting $port) {
     Write-Host ''
     Write-Host "Full-access mode is ready (TightVNC service on 127.0.0.1:$port, localhost only)." -ForegroundColor Green
-    Write-Host 'In VS Code run "Remote Desktop: Open Desktop".'
+    Write-Host 'In VS Code run "VNC Desktop View: Open Desktop".'
     Finish 0
 }
 Write-Host "TightVNC did not answer on 127.0.0.1:$port. Check the 'tvnserver' service." -ForegroundColor Red

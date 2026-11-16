@@ -142,7 +142,7 @@ export class Relay {
 function describeError(err: NodeJS.ErrnoException, host: string, port: number): string {
   if (err.code === 'ECONNREFUSED') {
     return `No VNC server is listening on ${host}:${port} on the remote machine. ` +
-      `Run "Remote Desktop: Set Up VNC Server on This Machine", or try the test desktop.`;
+      'Start one there (see the README for macOS and Linux), or check the vncDesktopView.port setting.';
   }
   return `Connection error (${err.code ?? 'unknown'}): ${err.message}`;
 }

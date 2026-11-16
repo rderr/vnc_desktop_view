@@ -91,7 +91,7 @@ async function main(): Promise<void> {
   });
   assert(!stillListening, 'server stopped after the last tab closed');
   assert(regQuery(['/v', 'UserOwnSetting'])?.includes('0x2a'), 'user\'s original settings restored');
-  assert(regQuery(['/v', 'VSCodeRemoteDesktop']) === null, 'no leftover extension settings');
+  assert(regQuery(['/v', 'VncDesktopView']) === null, 'no leftover extension settings');
   await new Promise((r) => setTimeout(r, 1000));
   assert(!watcherRunning(), 'foreground watcher stopped with the server');
 

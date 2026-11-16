@@ -3,7 +3,7 @@
 // show UAC prompts, the lock screen and the sign-in screen.
 //
 // scripts/setup-windows.ps1 does the work. It leaves:
-//  - %ProgramData%\vscode-remote-desktop\service.json  { installedBy, port }
+//  - %ProgramData%\vnc-desktop-view\service.json  { installedBy, port }
 //  - a one-time password hand-off file in the extension's storage folder
 //    (readable only by the user), which we move into VS Code secret storage.
 
@@ -18,7 +18,7 @@ export interface ServiceInfo {
   port: number;
 }
 
-const markerFile = () => path.join(process.env.ProgramData ?? 'C:\\ProgramData', 'vscode-remote-desktop', 'service.json');
+const markerFile = () => path.join(process.env.ProgramData ?? 'C:\\ProgramData', 'vnc-desktop-view', 'service.json');
 const handoffDir = (context: vscode.ExtensionContext) => path.join(context.globalStorageUri.fsPath, 'service-handoff');
 export const secretKeyFor = (host: string, port: number) => `vncPassword:${host}:${port}`;
 
@@ -67,7 +67,7 @@ export async function installService(context: vscode.ExtensionContext): Promise<
     },
     'Install',
   );
-  if (ok === 'Install') runScript(context, 'Remote Desktop: install full access', []);
+  if (ok === 'Install') runScript(context, 'VNC Desktop View: install full access', []);
 }
 
 export async function removeService(context: vscode.ExtensionContext): Promise<void> {
@@ -83,6 +83,6 @@ export async function removeService(context: vscode.ExtensionContext): Promise<v
   const ok = await vscode.window.showWarningMessage('Remove full-access mode?', { modal: true, detail }, 'Remove');
   if (ok === 'Remove') {
     await context.secrets.delete(secretKeyFor('127.0.0.1', info.port));
-    runScript(context, 'Remote Desktop: remove full access', ['-Uninstall']);
+    runScript(context, 'VNC Desktop View: remove full access', ['-Uninstall']);
   }
 }
