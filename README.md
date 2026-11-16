@@ -6,7 +6,7 @@ No ports to open, no VPN, nothing to install on your own machine. On a Windows r
 
 > **Preview.** Windows remotes are fully supported; macOS and Linux remotes work with a VNC server you set up yourself.
 
-![VNC Desktop View screenshot](resources/screenshot.png)
+![VNC Desktop View screenshot](resources/remotedesktop.png)
 
 ## Features
 
