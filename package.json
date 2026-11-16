@@ -1,0 +1,97 @@
+{
+  "name": "remote-desktop",
+  "displayName": "Remote Desktop (in-editor)",
+  "description": "View and control the remote machine's desktop in a VS Code tab, over the existing Remote-SSH / Tunnel connection.",
+  "version": "0.0.1",
+  "publisher": "robjderr",
+  "license": "MIT",
+  "private": true,
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "extensionKind": [
+    "workspace"
+  ],
+  "main": "./dist/extension.js",
+  "activationEvents": [],
+  "contributes": {
+    "commands": [
+      {
+        "command": "remoteDesktop.open",
+        "title": "Open Desktop",
+        "category": "Remote Desktop"
+      },
+      {
+        "command": "remoteDesktop.openTestServer",
+        "title": "Open Test Desktop (built-in fake VNC server)",
+        "category": "Remote Desktop"
+      },
+      {
+        "command": "remoteDesktop.installService",
+        "title": "Install Full-Access Mode (UAC prompts, lock screen)…",
+        "category": "Remote Desktop"
+      },
+      {
+        "command": "remoteDesktop.removeService",
+        "title": "Remove Full-Access Mode…",
+        "category": "Remote Desktop"
+      },
+      {
+        "command": "remoteDesktop.forgetPassword",
+        "title": "Forget Saved VNC Password",
+        "category": "Remote Desktop"
+      }
+    ],
+    "configuration": {
+      "title": "Remote Desktop",
+      "properties": {
+        "remoteDesktop.server": {
+          "type": "string",
+          "enum": ["auto", "app", "service", "custom"],
+          "enumDescriptions": [
+            "Windows: full-access mode if installed, otherwise application mode. Other systems: custom.",
+            "Windows: run TightVNC as an ordinary program while a desktop tab is open. No admin rights; no UAC prompts or lock screen.",
+            "Windows: use the full-access TightVNC service (install it with \"Install Full-Access Mode\").",
+            "Connect to an existing VNC server at remoteDesktop.host / remoteDesktop.port."
+          ],
+          "default": "auto",
+          "description": "Which VNC server the desktop tab connects to."
+        },
+        "remoteDesktop.host": {
+          "type": "string",
+          "default": "127.0.0.1",
+          "description": "Custom mode: VNC server host, as seen from the remote machine. Keep this as localhost unless you know you need otherwise."
+        },
+        "remoteDesktop.port": {
+          "type": "number",
+          "default": 5900,
+          "description": "Custom mode: VNC server port, as seen from the remote machine."
+        },
+        "remoteDesktop.scaleToFit": {
+          "type": "boolean",
+          "default": true,
+          "description": "Scale the remote desktop to fit the tab."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "node esbuild.mjs && node scripts/build-notices.mjs",
+    "vscode:prepublish": "npm run build",
+    "package": "npx --yes @vscode/vsce package --allow-missing-repository",
+    "watch": "node esbuild.mjs --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "npm run build && node test/relay-test.mjs"
+  },
+  "devDependencies": {
+    "@novnc/novnc": "^1.7.0",
+    "@types/node": "^20.19.0",
+    "@types/vscode": "1.90.0",
+    "esbuild": "^0.28.2",
+    "typescript": "^5.9.0",
+    "ws": "^8.23.0"
+  }
+}

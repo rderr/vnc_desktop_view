@@ -1,0 +1,10 @@
+src/**
+test/**
+scripts/build-notices.mjs
+dist/testServer.js
+.gitignore
+node_modules/**
+.vscode/**
+esbuild.mjs
+tsconfig.json
+**/*.map
