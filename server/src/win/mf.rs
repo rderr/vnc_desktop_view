@@ -13,9 +13,10 @@
 //! hardware encoders read a GPU-converted NV12 texture directly; the software
 //! encoder gets them copied to system memory and converted on the CPU.
 
-use crate::capture::Capturer;
-use crate::encoder::{BITRATE, Converter, MAX_FPS, VideoEncoder};
-use crate::gpu::Nv12Converter;
+use super::capture::Capturer;
+use super::convert::Converter;
+use crate::encoder::{MAX_FPS, VideoEncoder, bitrate};
+use super::gpu::Nv12Converter;
 use anyhow::{Context, Result, bail};
 use std::mem::ManuallyDrop;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -107,7 +108,7 @@ impl MfEncoder {
                 // Best effort: not every encoder supports every property.
                 report("CODECAPI_AVLowLatencyMode", api.SetValue(&CODECAPI_AVLowLatencyMode, &variant_bool(true)));
                 report("CODECAPI_AVEncCommonRateControlMode", api.SetValue(&CODECAPI_AVEncCommonRateControlMode, &variant_u32(eAVEncCommonRateControlMode_CBR.0 as u32)));
-                report("CODECAPI_AVEncCommonMeanBitRate", api.SetValue(&CODECAPI_AVEncCommonMeanBitRate, &variant_u32(BITRATE)));
+                report("CODECAPI_AVEncCommonMeanBitRate", api.SetValue(&CODECAPI_AVEncCommonMeanBitRate, &variant_u32(bitrate(width, height))));
                 report("CODECAPI_AVEncMPVDefaultBPictureCount", api.SetValue(&CODECAPI_AVEncMPVDefaultBPictureCount, &variant_u32(0)));
                 // Keyframes on request, plus one every 10 s as a safety net.
                 report("CODECAPI_AVEncMPVGOPSize", api.SetValue(&CODECAPI_AVEncMPVGOPSize, &variant_u32(MAX_FPS * 10)));
@@ -120,7 +121,7 @@ impl MfEncoder {
                 let out = MFCreateMediaType()?;
                 out.SetGUID(&MF_MT_MAJOR_TYPE, &MFMediaType_Video)?;
                 out.SetGUID(&MF_MT_SUBTYPE, &MFVideoFormat_H264)?;
-                out.SetUINT32(&MF_MT_AVG_BITRATE, BITRATE)?;
+                out.SetUINT32(&MF_MT_AVG_BITRATE, bitrate(width, height))?;
                 out.SetUINT64(&MF_MT_FRAME_SIZE, ((width as u64) << 32) | height as u64)?;
                 out.SetUINT64(&MF_MT_FRAME_RATE, ((MAX_FPS as u64) << 32) | 1)?;
                 out.SetUINT32(&MF_MT_INTERLACE_MODE, MFVideoInterlace_Progressive.0 as u32)?;

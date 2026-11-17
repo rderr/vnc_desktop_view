@@ -1,4 +1,5 @@
-//! desktop-server: captures the desktop and streams it as H.264.
+//! desktop-server: captures the desktop and streams it as H.264 (Windows, and
+//! Linux on X11; the platform code is in win/ and linux/).
 //!
 //! Modes:
 //!   desktop-server [--encoder auto|hw|sw]                         stream on stdout (see PROTOCOL)
@@ -21,16 +22,20 @@
 //!   kind 4 AUDIO     u8 enabled – start/stop sending audio (off until the viewer asks)
 //!   kind 5 CLIPBOARD UTF-8 text – put it on the remote clipboard
 
-mod audio;
-mod capture;
-mod clipboard;
 mod encoder;
-mod gpu;
-mod input;
-mod mf;
+#[cfg(target_os = "linux")]
+mod linux;
+#[cfg(windows)]
+mod win;
+
+#[cfg(target_os = "linux")]
+use linux as platform;
+#[cfg(windows)]
+use win as platform;
 
 use anyhow::Result;
-use capture::{Capturer, Frame};
+use platform::capture::{self, Capturer, Frame};
+use platform::{audio, clipboard, input};
 use encoder::{MAX_FPS, VideoEncoder};
 use std::io::{Read, Write};
 use std::sync::Arc;
@@ -41,6 +46,8 @@ fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().collect();
     let arg = |name: &str| args.iter().position(|a| a == name).and_then(|i| args.get(i + 1)).cloned();
     let encoder_kind = arg("--encoder").unwrap_or_else(|| "auto".into());
+    #[cfg(target_os = "linux")]
+    linux::find_display();
 
     if let Some(path) = arg("--out") {
         let seconds: u64 = arg("--seconds").map(|s| s.parse()).transpose()?.unwrap_or(5);

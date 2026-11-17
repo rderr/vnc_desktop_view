@@ -12,9 +12,9 @@ export function activate(context: vscode.ExtensionContext): void {
 }
 
 async function openDesktop(context: vscode.ExtensionContext, log: vscode.OutputChannel): Promise<void> {
-  if (process.platform !== 'win32') {
+  if (process.platform !== 'win32' && process.platform !== 'linux') {
     void vscode.window.showInformationMessage(
-      'Remote Desktop View supports Windows remotes so far. macOS and Linux support is planned.');
+      'Remote Desktop View supports Windows and Linux remotes so far. macOS support is planned.');
     return;
   }
   // In a plain local window the "remote" machine is this one. That's rarely what's

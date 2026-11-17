@@ -5,7 +5,7 @@
 //! Output is BT.601 limited range, the same as the CPU converter in
 //! encoder.rs and what viewers assume for H.264 without color info.
 
-use crate::capture::Capturer;
+use super::capture::Capturer;
 use anyhow::{Context, Result};
 use std::mem::ManuallyDrop;
 use windows::Win32::Foundation::RECT;

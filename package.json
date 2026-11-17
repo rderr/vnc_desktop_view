@@ -1,7 +1,7 @@
 {
   "name": "vnc-desktop-view",
   "displayName": "Remote Desktop View",
-  "description": "See and control your remote Windows machine's desktop, with sound and clipboard, in an editor tab over your existing Remote Tunnels / Remote-SSH connection",
+  "description": "See and control your remote Windows or Linux machine's desktop, with sound and clipboard, in an editor tab over your existing Remote Tunnels / Remote-SSH connection",
   "version": "0.2.0",
   "preview": true,
   "license": "MIT",
@@ -23,7 +23,8 @@
     "ssh",
     "screen sharing",
     "h.264",
-    "windows"
+    "windows",
+    "linux"
   ],
   "galleryBanner": {
     "color": "#1e1e1e",

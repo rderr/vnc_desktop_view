@@ -14,10 +14,11 @@ The desktop is now streamed by the extension's own desktop server instead of VNC
 - Clipboard sync in both directions
 - On a Mac, ⌘ acts as Ctrl on the remote (`vncDesktopView.commandKey`, or the **⌘ = Ctrl** button)
 - Recovery from resolution changes, the lock screen, UAC prompts and server crashes without closing the tab
+- Linux remotes: X11 desktops with an NVIDIA GPU (NVENC, up to 4K), with input, sound (PulseAudio / PipeWire) and clipboard sync
 
 ### Removed
 - VNC: application mode, full-access mode, custom VNC servers, the test desktop, saved VNC passwords, and the `vncDesktopView.server`, `host`, `port` and `scaleToFit` settings
-- macOS and Linux remotes (they relied on VNC); support with the new server is planned
+- macOS remotes (they relied on VNC); support with the new server is planned
 
 ## [0.1.1] - 2026-11-16
 

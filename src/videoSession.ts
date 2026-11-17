@@ -146,6 +146,10 @@ export class VideoSession {
     this.log(`desktop: starting ${this.binary}`);
     void this.post({ type: 'status', text: 'Starting server…' });
     void this.post({ type: 'notice', text: null });
+    if (process.platform !== 'win32') {
+      // Packages built elsewhere can lose the executable bit.
+      try { fs.accessSync(this.binary, fs.constants.X_OK); } catch { try { fs.chmodSync(this.binary, 0o755); } catch { /* spawn reports it */ } }
+    }
     const proc = spawn(this.binary, [], { windowsHide: true });
     this.proc = proc;
     proc.stdout.on('data', (chunk: Buffer) => { if (this.proc === proc) this.onData(chunk); });

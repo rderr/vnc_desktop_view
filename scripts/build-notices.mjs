@@ -10,7 +10,7 @@ const opusDecoderVersion = JSON.parse(fs.readFileSync('node_modules/opus-decoder
 const text = `THIRD-PARTY NOTICES
 
 This extension bundles the third-party software listed below (inside
-dist/video.js, and in Windows packages bin/desktop-server.exe). The files
+dist/video.js, and in Windows and Linux packages bin/desktop-server). The files
 are used unmodified.
 
 ${rule}
@@ -79,11 +79,47 @@ NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 `;
 
-// The desktop server (bin/desktop-server.exe, Windows packages only). Licenses
+// NVENC API definitions (from nvEncodeAPI.h) compiled into the Linux server.
+const nvencText = `
+${rule}
+NVIDIA Video Codec SDK API header nvEncodeAPI.h (Linux packages, bin/desktop-server)
+https://github.com/FFmpeg/nv-codec-headers
+${rule}
+
+Copyright (c) 2010-2023 NVIDIA Corporation
+
+Permission is hereby granted, free of charge, to any person
+obtaining a copy of this software and associated documentation
+files (the "Software"), to deal in the Software without
+restriction, including without limitation the rights to use,
+copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the software, and to permit persons to whom the
+software is furnished to do so, subject to the following
+conditions:
+
+The above copyright notice and this permission notice shall be
+included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES
+OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.
+`;
+
+// The desktop server (bin/desktop-server[.exe], Windows and Linux packages). Licenses
 // with identical text are printed once, listing the packages that use them.
 let serverText = '';
 try {
-  const deps = serverDependencies();
+  // Crates for either platform, each listed once.
+  const byId = new Map();
+  for (const d of [...serverDependencies('x86_64-pc-windows-msvc'), ...serverDependencies('x86_64-unknown-linux-gnu')]) {
+    byId.set(`${d.name} ${d.version}`, d);
+  }
+  const deps = [...byId.values()].sort((a, b) => a.name.localeCompare(b.name));
   const groups = new Map(); // license text -> [package labels]
   for (const d of deps) {
     for (const t of d.texts) {
@@ -94,7 +130,7 @@ try {
   }
   serverText = `
 ${rule}
-desktop-server.exe (Windows packages, bin/): Rust crates compiled into it
+desktop-server (Windows and Linux packages, bin/): Rust crates compiled into it
 ${rule}
 
 ${deps.map((d) => `  ${d.name} ${d.version} — ${d.license}${d.repository ? ` — ${d.repository}` : ''}`).join('\n')}
@@ -113,5 +149,5 @@ ${body}
   console.warn(`server notices skipped (${e.message.split('\n')[0]}); is Rust installed?`);
 }
 
-fs.writeFileSync('ThirdPartyNotices.txt', text + serverText);
+fs.writeFileSync('ThirdPartyNotices.txt', text + nvencText + serverText);
 console.log(`ThirdPartyNotices.txt written (opus-decoder ${opusDecoderVersion}${serverText ? ', desktop server' : ''})`);
