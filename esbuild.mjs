@@ -1,7 +1,8 @@
 // Builds two bundles:
 //  - dist/extension.js : the extension host side (Node, runs on the remote machine)
-//  - dist/webview.js   : the viewer that runs inside the editor tab (browser, runs on your machine)
+//  - dist/video.js     : the viewer that runs inside the editor tab (browser, runs on your machine)
 import * as esbuild from 'esbuild';
+import * as fs from 'fs';
 
 const watch = process.argv.includes('--watch');
 
@@ -17,17 +18,6 @@ const configs = [
     sourcemap: true,
   },
   {
-    entryPoints: ['src/webview/main.ts'],
-    outfile: 'dist/webview.js',
-    bundle: true,
-    platform: 'browser',
-    // ES module (loaded with <script type="module">) because noVNC uses top-level await.
-    format: 'esm',
-    target: 'es2022',
-    sourcemap: true,
-  },
-  {
-    // Experimental video-preview viewer (custom server in server/).
     entryPoints: ['src/webview/video.ts'],
     outfile: 'dist/video.js',
     bundle: true,
@@ -36,21 +26,13 @@ const configs = [
     target: 'es2022',
     sourcemap: true,
   },
-  {
-    // Exposed separately so it can be run/tested without VS Code.
-    entryPoints: ['src/testServerCli.ts'],
-    outfile: 'dist/testServer.js',
-    bundle: true,
-    platform: 'node',
-    format: 'cjs',
-    target: 'node18',
-  },
 ];
 
 if (watch) {
   for (const c of configs) (await esbuild.context(c)).watch();
   console.log('watching...');
 } else {
+  fs.rmSync('dist', { recursive: true, force: true }); // no stale bundles in the package
   await Promise.all(configs.map((c) => esbuild.build(c)));
   console.log('built');
 }

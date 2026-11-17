@@ -12,8 +12,8 @@ const MAX_CLIPBOARD = 1024 * 1024;
 const MAX_AUTO_RESTARTS = 3;
 
 /**
- * Experimental: an editor tab showing the desktop through the custom Rust
- * server (server/), which streams H.264 and Opus on stdout and takes input and
+ * An editor tab showing the remote desktop through the desktop server
+ * (server/, Rust), which streams H.264 and Opus on stdout and takes input and
  * clipboard text on stdin.
  */
 export class VideoSession {
@@ -43,7 +43,7 @@ export class VideoSession {
     private readonly log: (msg: string) => void,
   ) {
     const distUri = vscode.Uri.joinPath(context.extensionUri, 'dist');
-    this.panel = vscode.window.createWebviewPanel('vncDesktopViewVideo', `Desktop: ${label} (video preview)`,
+    this.panel = vscode.window.createWebviewPanel('vncDesktopView', `Desktop: ${label}`,
       vscode.ViewColumn.Active, { enableScripts: true, retainContextWhenHidden: true, localResourceRoots: [distUri] });
     this.panel.webview.html = this.html(distUri);
     this.panel.webview.onDidReceiveMessage((m: VideoToExtension) => this.onMessage(m));
@@ -69,7 +69,7 @@ export class VideoSession {
       this.clipboardText = text;
       this.send(5, Buffer.from(text, 'utf8'));
     } catch (e) {
-      this.log(`video preview: reading the clipboard failed: ${(e as Error).message}`);
+      this.log(`desktop: reading the clipboard failed: ${(e as Error).message}`);
     }
   }
 
@@ -143,7 +143,7 @@ export class VideoSession {
     this.buffered = Buffer.alloc(0);
     this.sent = this.acked = 0;
     this.paused = false;
-    this.log(`video preview: starting ${this.binary}`);
+    this.log(`desktop: starting ${this.binary}`);
     void this.post({ type: 'status', text: 'Starting server…' });
     void this.post({ type: 'notice', text: null });
     const proc = spawn(this.binary, [], { windowsHide: true });
@@ -152,9 +152,9 @@ export class VideoSession {
     proc.stderr.on('data', (chunk: Buffer) => {
       for (const line of chunk.toString().split(/\r?\n/)) if (line.trim()) this.log(`server: ${line}`);
     });
-    proc.on('error', (e) => this.log(`video preview: ${e.message}`));
+    proc.on('error', (e) => this.log(`desktop: ${e.message}`));
     proc.on('exit', (code) => {
-      this.log(`video preview: server exited (${code})`);
+      this.log(`desktop: server exited (${code})`);
       if (this.proc !== proc) return; // we stopped it on purpose
       this.proc = undefined;
       // Unexpected exit: restart automatically, unless it keeps happening.
@@ -183,7 +183,7 @@ export class VideoSession {
       if (kind === 1) {
         const width = payload.readUInt32LE(0), height = payload.readUInt32LE(4);
         const codec = payload.subarray(8).toString('utf8');
-        this.log(`video preview: ${width}x${height} ${codec}`);
+        this.log(`desktop: ${width}x${height} ${codec}`);
         void this.post({ type: 'hello', width, height, codec });
       } else if (kind === 2) {
         const key = (payload[0] & 1) === 1;
@@ -196,7 +196,7 @@ export class VideoSession {
         // Capture can't run right now (secure desktop, or failing); the server keeps retrying.
         const code = payload[0];
         const detail = payload.subarray(1).toString('utf8');
-        if (code !== 0) this.log(`video preview: capture unavailable (${code}): ${detail}`);
+        if (code !== 0) this.log(`desktop: capture unavailable (${code}): ${detail}`);
         void this.post({ type: 'notice', text: noticeText(code, this.label, detail) });
       } else if (kind === 3) {
         // Audio is small (~16 KB/s) and not counted against the video flow-control window.
@@ -248,7 +248,6 @@ export class VideoSession {
            border: none; padding: 3px 10px; border-radius: 2px; cursor: pointer; font: inherit; }
   button:hover { background: var(--vscode-button-secondaryHoverBackground); }
   button[aria-pressed="true"] { background: var(--vscode-button-background); color: var(--vscode-button-foreground); }
-  #badge { padding: 1px 8px; border-radius: 10px; font-size: 0.9em; background: var(--vscode-badge-background); color: var(--vscode-badge-foreground); }
   #stats { margin-left: auto; opacity: 0.75; font-family: var(--vscode-editor-font-family); font-variant-numeric: tabular-nums; }
   #notice { padding: 6px 10px; flex: none; background: var(--vscode-inputValidation-warningBackground, #5a4a00);
             border-bottom: 1px solid var(--vscode-inputValidation-warningBorder, #b89500); }
@@ -264,7 +263,6 @@ export class VideoSession {
     <button id="restart">Restart</button>
     <button id="sound" aria-pressed="false" title="Play the remote machine's sound here">Sound off</button>
     <button id="cmdkey" hidden title="What the ⌘ key sends to the remote desktop (setting: vncDesktopView.commandKey)">⌘ = Ctrl</button>
-    <span id="badge" title="Experimental custom server (H.264 over VS Code's connection).">Video preview</span>
     <span id="status">Starting…</span>
     <span id="stats"></span>
   </div>
@@ -276,7 +274,7 @@ export class VideoSession {
   }
 }
 
-/** The server binary, if it has been built (dev only for now: `cargo build --release` in server/). */
+/** The server binary: bin/ in installed packages, server/target/release in a development checkout. */
 export function findServerBinary(extensionPath: string): string | undefined {
   const exe = process.platform === 'win32' ? 'desktop-server.exe' : 'desktop-server';
   for (const p of [`${extensionPath}/bin/${exe}`, `${extensionPath}/server/target/release/${exe}`]) {
@@ -295,9 +293,8 @@ function noticeText(code: number, label: string, detail: string): string | null 
     case 0:
       return null;
     case 1:
-      return `${label} is showing the lock screen, a UAC prompt or another secure screen, which the video preview ` +
-        `can't show or control. The picture comes back by itself when the desktop returns ` +
-        `(to unlock remotely, use the full-access VNC tab: "Open Desktop").`;
+      return `${label} is showing the lock screen, a UAC prompt or another secure screen, which can't be shown ` +
+        `or controlled from here yet. The picture comes back by itself when the desktop returns.`;
     default:
       return `Can't capture the screen of ${label} right now; retrying… (${detail})`;
   }

@@ -1,6 +1,6 @@
 // Builds the extension's VSIX packages:
-//   vnc-desktop-view-<version>-win32-x64.vsix  Windows remotes; includes bin/desktop-server.exe (video preview)
-//   vnc-desktop-view-<version>.vsix            every other platform (VNC only)
+//   vnc-desktop-view-<version>-win32-x64.vsix  Windows remotes; includes bin/desktop-server.exe
+//   vnc-desktop-view-<version>.vsix            every other platform (shows that only Windows is supported yet)
 // VS Code installs the package matching the *remote* machine, where the extension runs.
 //
 // Must run on Windows with Rust and the Visual Studio C++ build tools (the server is a

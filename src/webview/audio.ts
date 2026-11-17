@@ -42,7 +42,7 @@ export class AudioPlayer {
       }
       return this.running;
     } catch (e) {
-      if (!this.reportedError) this.log(`video preview: could not start audio: ${(e as Error).message}`);
+      if (!this.reportedError) this.log(`desktop: could not start audio: ${(e as Error).message}`);
       this.reportedError = true;
       return false;
     }
@@ -57,7 +57,7 @@ export class AudioPlayer {
     const out = this.decoder!.decodeFrame(data);
     if (out.errors.length && !this.reportedError) {
       this.reportedError = true;
-      this.log(`video preview: audio decode error: ${out.errors[0].message}`);
+      this.log(`desktop: audio decode error: ${out.errors[0].message}`);
     }
     if (out.samplesDecoded) this.play(out.channelData, out.samplesDecoded);
   }

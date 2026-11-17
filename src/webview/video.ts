@@ -1,4 +1,4 @@
-// Video-preview viewer: decodes the custom server's H.264 with WebCodecs and
+// Desktop viewer: decodes the custom server's H.264 with WebCodecs and
 // draws it on a canvas. Runs in the editor tab, on the user's own machine.
 
 import type { CommandKey, VideoToExtension, VideoToWebview } from '../videoProtocol';
@@ -46,7 +46,7 @@ function newDecoder(): void {
       stats.frames++;
     },
     error: (e) => {
-      post({ type: 'log', text: `video preview: decoder error: ${e.message}` });
+      post({ type: 'log', text: `desktop: decoder error: ${e.message}` });
       setStatus(`Decoder error: ${e.message}`);
       needKey = true;
       newDecoder();
@@ -82,7 +82,7 @@ window.addEventListener('message', (event: MessageEvent<VideoToWebview>) => {
         try {
           decoder.decode(new EncodedVideoChunk({ type: msg.key ? 'key' : 'delta', timestamp: msg.timestamp, data }));
         } catch (e) {
-          post({ type: 'log', text: `video preview: decode() threw: ${(e as Error).message}` });
+          post({ type: 'log', text: `desktop: decode() threw: ${(e as Error).message}` });
           needKey = true;
           post({ type: 'keyframe' });
         }
@@ -182,7 +182,7 @@ function sendKey(e: KeyboardEvent, down: boolean): void {
   e.preventDefault();
   e.stopPropagation();
   if (scan === undefined) {
-    if (down) post({ type: 'log', text: `video preview: no scan code for key "${e.code}"` });
+    if (down) post({ type: 'log', text: `desktop: no scan code for key "${e.code}"` });
     return;
   }
   if (down) pressed.add(scan);

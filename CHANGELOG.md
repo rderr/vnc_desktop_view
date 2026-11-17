@@ -1,8 +1,23 @@
 # Changelog
 
-All notable changes to the VNC Desktop View extension will be documented in this file.
+All notable changes to the Remote Desktop View extension (formerly VNC Desktop View) will be documented in this file.
 
 ## [Unreleased]
+
+## [0.2.0]
+
+The desktop is now streamed by the extension's own desktop server instead of VNC. The extension is renamed **Remote Desktop View**; its ID and settings prefix are unchanged.
+
+### Added
+- H.264 video, encoded on the remote GPU straight from video memory (Windows' software encoder when there's no hardware one) and decoded by VS Code: smoother and a fraction of VNC's bandwidth
+- Sound from the remote machine (**Sound** button)
+- Clipboard sync in both directions
+- On a Mac, ⌘ acts as Ctrl on the remote (`vncDesktopView.commandKey`, or the **⌘ = Ctrl** button)
+- Recovery from resolution changes, the lock screen, UAC prompts and server crashes without closing the tab
+
+### Removed
+- VNC: application mode, full-access mode, custom VNC servers, the test desktop, saved VNC passwords, and the `vncDesktopView.server`, `host`, `port` and `scaleToFit` settings
+- macOS and Linux remotes (they relied on VNC); support with the new server is planned
 
 ## [0.1.1] - 2026-11-16
 

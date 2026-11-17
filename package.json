@@ -1,8 +1,8 @@
 {
   "name": "vnc-desktop-view",
-  "displayName": "VNC Desktop View",
-  "description": "See and control your remote machine's desktop in an editor tab, over your existing Remote Tunnels / Remote-SSH connection",
-  "version": "0.1.1",
+  "displayName": "Remote Desktop View",
+  "description": "See and control your remote Windows machine's desktop, with sound and clipboard, in an editor tab over your existing Remote Tunnels / Remote-SSH connection",
+  "version": "0.2.0",
   "preview": true,
   "license": "MIT",
   "author": "Rob Derr <robjderr@gmail.com>",
@@ -17,14 +17,12 @@
     "url": "https://github.com/rderr/vnc_desktop_view/issues"
   },
   "keywords": [
-    "vnc",
     "remote desktop",
     "remote development",
     "remote tunnels",
     "ssh",
     "screen sharing",
-    "novnc",
-    "tightvnc",
+    "h.264",
     "windows"
   ],
   "galleryBanner": {
@@ -47,36 +45,11 @@
       {
         "command": "vncDesktopView.open",
         "title": "Open Desktop",
-        "category": "VNC Desktop View"
-      },
-      {
-        "command": "vncDesktopView.openTestServer",
-        "title": "Open Test Desktop (built-in fake VNC server)",
-        "category": "VNC Desktop View"
-      },
-      {
-        "command": "vncDesktopView.openVideoPreview",
-        "title": "Open Desktop (Video Preview, experimental)",
-        "category": "VNC Desktop View"
-      },
-      {
-        "command": "vncDesktopView.installService",
-        "title": "Install Full-Access Mode (UAC prompts, lock screen)…",
-        "category": "VNC Desktop View"
-      },
-      {
-        "command": "vncDesktopView.removeService",
-        "title": "Remove Full-Access Mode…",
-        "category": "VNC Desktop View"
-      },
-      {
-        "command": "vncDesktopView.forgetPassword",
-        "title": "Forget Saved VNC Password",
-        "category": "VNC Desktop View"
+        "category": "Remote Desktop View"
       }
     ],
     "configuration": {
-      "title": "VNC Desktop View",
+      "title": "Remote Desktop View",
       "properties": {
         "vncDesktopView.commandKey": {
           "type": "string",
@@ -89,39 +62,7 @@
             "⌘ is sent as the Windows key."
           ],
           "default": "ctrl",
-          "markdownDescription": "Video preview, Mac only: what the ⌘ (Command) key sends to the remote desktop."
-        },
-        "vncDesktopView.server": {
-          "type": "string",
-          "enum": [
-            "auto",
-            "app",
-            "service",
-            "custom"
-          ],
-          "enumDescriptions": [
-            "Windows: full-access mode if installed, otherwise application mode. Other systems: custom.",
-            "Windows: run TightVNC as an ordinary program while a desktop tab is open. No admin rights; no UAC prompts or lock screen.",
-            "Windows: use the full-access TightVNC service (install it with \"Install Full-Access Mode\").",
-            "Connect to an existing VNC server at vncDesktopView.host / vncDesktopView.port."
-          ],
-          "default": "auto",
-          "description": "Which VNC server the desktop tab connects to."
-        },
-        "vncDesktopView.host": {
-          "type": "string",
-          "default": "127.0.0.1",
-          "description": "Custom mode: VNC server host, as seen from the remote machine. Keep this as localhost unless you know you need otherwise."
-        },
-        "vncDesktopView.port": {
-          "type": "number",
-          "default": 5900,
-          "description": "Custom mode: VNC server port, as seen from the remote machine."
-        },
-        "vncDesktopView.scaleToFit": {
-          "type": "boolean",
-          "default": true,
-          "description": "Scale the remote desktop to fit the tab."
+          "markdownDescription": "Mac only: what the ⌘ (Command) key sends to the remote desktop."
         }
       }
     }
@@ -129,21 +70,17 @@
   "scripts": {
     "build": "node esbuild.mjs && node scripts/build-notices.mjs",
     "vscode:prepublish": "npm run build",
-    "vscode:uninstall": "node ./scripts/uninstall.js",
     "watch": "node esbuild.mjs --watch",
     "typecheck": "tsc --noEmit",
-    "test": "npm run build && node test/relay-test.mjs",
     "package": "node scripts/package.mjs",
     "publish": "node scripts/package.mjs --publish"
   },
   "devDependencies": {
-    "@novnc/novnc": "1.7.0",
     "@types/node": "^20.19.0",
     "@types/vscode": "1.90.0",
     "@vscode/vsce": "^3.9.2",
     "esbuild": "^0.28.2",
     "opus-decoder": "0.7.11",
-    "typescript": "^5.9.0",
-    "ws": "^8.23.0"
+    "typescript": "^5.9.0"
   }
 }

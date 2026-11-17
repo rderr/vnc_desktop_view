@@ -5,7 +5,6 @@ src/**
 node_modules/**
 test/**
 scripts/build-notices.mjs
-dist/testServer.js
 **/*.map
 **/*.ts
 .gitignore

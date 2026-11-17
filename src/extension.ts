@@ -1,107 +1,27 @@
 import * as vscode from 'vscode';
 import * as os from 'os';
-import { DesktopSession } from './session';
-import { startTestServer, type TestMode } from './testServer';
-import { showManualSetup } from './setup';
-import { TightVncAppServer } from './windows/tightvncApp';
-import type { InputState } from './windows/foregroundWatcher';
-import { importHandoffPassword, installService, readServiceInfo, removeService } from './windows/service';
-import { PasswordStore } from './passwordStore';
 import { VideoSession, findServerBinary } from './videoSession';
 
-type ServerMode = 'app' | 'service' | 'custom';
-
-let appServer: TightVncAppServer | undefined;
-/** Remembered passwords, stored on the remote machine (see passwordStore.ts). */
-let passwords: PasswordStore;
-
 export function activate(context: vscode.ExtensionContext): void {
-  const log = vscode.window.createOutputChannel('VNC Desktop View');
+  const log = vscode.window.createOutputChannel('Remote Desktop View');
   context.subscriptions.push(log);
-  passwords = new PasswordStore(context.globalStorageUri.fsPath);
-  appServer = new TightVncAppServer(
-    context.globalStorageUri.fsPath,
-    vscode.Uri.joinPath(context.extensionUri, 'scripts', 'foreground-watch.ps1').fsPath,
-    (m) => log.appendLine(m),
-  );
 
   context.subscriptions.push(
     vscode.commands.registerCommand('vncDesktopView.open', () => openDesktop(context, log)),
-
-    vscode.commands.registerCommand('vncDesktopView.openTestServer', async () => {
-      const pick = await vscode.window.showQuickPick(
-        [
-          { label: 'Light', description: 'Small changing areas, like normal desktop use', mode: 'light' as TestMode },
-          { label: 'Stress', description: 'Whole screen changes every frame, like full-screen video', mode: 'stress' as TestMode },
-        ],
-        { title: 'Test desktop mode' },
-      );
-      if (!pick) return;
-      let session: DesktopSession | undefined;
-      const server = await startTestServer(pick.mode, (fps) => void session?.post({ type: 'serverStats', fps }));
-      session = new DesktopSession(context, {
-        host: '127.0.0.1', port: server.port, label: `Test (${pick.label})`, fullAccess: true, mode: 'test',
-      }, undefined, (m) => log.appendLine(m));
-      session.onDidDispose(() => server.close());
-    }),
-
-    vscode.commands.registerCommand('vncDesktopView.openVideoPreview', () => {
-      if (process.platform !== 'win32') {
-        void vscode.window.showInformationMessage(
-          'The video preview is only available on Windows remotes so far. Use "Open Desktop" (VNC) on this machine.');
-        return;
-      }
-      const binary = findServerBinary(context.extensionPath);
-      if (!binary) {
-        // Installed packages ship bin/desktop-server.exe; a development checkout needs it built.
-        void vscode.window.showErrorMessage(
-          'The video-preview server is missing from this installation. Reinstall the extension, or in a ' +
-          'development checkout run "cargo build --release" in server/.');
-        return;
-      }
-      new VideoSession(context, binary, os.hostname(), (m) => log.appendLine(m));
-    }),
-
-    vscode.commands.registerCommand('vncDesktopView.installService', () =>
-      process.platform === 'win32' ? installService(context) : showManualSetup()),
-
-    vscode.commands.registerCommand('vncDesktopView.removeService', () =>
-      process.platform === 'win32' ? removeService(context, passwords) : undefined),
-
-    vscode.commands.registerCommand('vncDesktopView.forgetPassword', async () => {
-      const cfg = vscode.workspace.getConfiguration('vncDesktopView');
-      const targets: [string, number][] = [[cfg.get('host', '127.0.0.1'), cfg.get('port', 5900)]];
-      const svc = readServiceInfo();
-      if (svc) targets.push(['127.0.0.1', svc.port]);
-      for (const [host, port] of targets) {
-        await passwords.delete(PasswordStore.key(host, port)).catch(() => undefined);
-        await context.secrets.delete(`vncPassword:${host}:${port}`); // where 0.1.0 kept them
-      }
-      void vscode.window.showInformationMessage(
-        'Saved VNC passwords removed. Note: the full-access password was generated during setup; ' +
-        'to get a new one, run "Install Full-Access Mode" again.');
-    }),
   );
 }
 
-function resolveMode(): ServerMode {
-  const setting = vscode.workspace.getConfiguration('vncDesktopView').get<string>('server', 'auto');
-  if (setting === 'app' || setting === 'service' || setting === 'custom') return setting;
-  if (process.platform !== 'win32') return 'custom';
-  return readServiceInfo() ? 'service' : 'app';
-}
-
 async function openDesktop(context: vscode.ExtensionContext, log: vscode.OutputChannel): Promise<void> {
-  const label = os.hostname();
-  const mode = resolveMode();
-  log.appendLine(`open desktop: mode=${mode} remote=${vscode.env.remoteName ?? 'none'}`);
-
+  if (process.platform !== 'win32') {
+    void vscode.window.showInformationMessage(
+      'Remote Desktop View supports Windows remotes so far. macOS and Linux support is planned.');
+    return;
+  }
   // In a plain local window the "remote" machine is this one. That's rarely what's
-  // wanted (it shows your own screen), so explain, unless a server was chosen explicitly.
-  const explicit = vscode.workspace.getConfiguration('vncDesktopView').get<string>('server', 'auto') !== 'auto';
-  if (!vscode.env.remoteName && !explicit) {
+  // wanted (it shows your own screen), so explain first.
+  if (!vscode.env.remoteName) {
     const choice = await vscode.window.showInformationMessage(
-      'VNC Desktop View shows the desktop of the machine VS Code is connected to.',
+      'Remote Desktop View shows the desktop of the machine VS Code is connected to.',
       {
         modal: true,
         detail: 'This window is not connected to a remote. Connect with Remote Tunnels, Remote-SSH or WSL first, ' +
@@ -111,71 +31,14 @@ async function openDesktop(context: vscode.ExtensionContext, log: vscode.OutputC
     );
     if (!choice) return;
   }
-
-  try {
-    switch (mode) {
-      case 'app': {
-        if (process.platform !== 'win32') throw new Error('Application mode is only available on Windows remotes.');
-        const server = appServer!;
-        const lease = await vscode.window.withProgress(
-          {
-            location: vscode.ProgressLocation.Notification,
-            title: server.isDownloaded() ? 'Starting remote desktop…' : 'Downloading TightVNC (one time, ~2.5 MB)…',
-          },
-          () => server.acquire(),
-        );
-        const session = new DesktopSession(context, {
-          host: '127.0.0.1', port: lease.port, label, password: lease.password, fullAccess: false, mode: 'app',
-        }, undefined, (m) => log.appendLine(m));
-        // Explain when Windows silently drops our input (admin window focused, UAC prompt, lock screen).
-        const unsubscribe = server.inputWatcher.subscribe((s) => {
-          session.setBanner(inputBlockedMessage(s), s.blocked);
-        });
-        session.onDidDispose(() => {
-          unsubscribe();
-          void server.release();
-        });
-        return;
-      }
-      case 'service': {
-        const info = readServiceInfo();
-        if (!info) {
-          const choice = await vscode.window.showWarningMessage(
-            'Full-access mode is not installed on this machine.', 'Install Full Access…');
-          if (choice) await installService(context);
-          return;
-        }
-        await importHandoffPassword(context, passwords, info.port);
-        new DesktopSession(context, { host: '127.0.0.1', port: info.port, label, fullAccess: true, mode: 'service' },
-          passwords, (m) => log.appendLine(m));
-        return;
-      }
-      case 'custom': {
-        const cfg = vscode.workspace.getConfiguration('vncDesktopView');
-        new DesktopSession(context, {
-          host: cfg.get('host', '127.0.0.1'), port: cfg.get('port', 5900), label, fullAccess: true, mode: 'custom',
-        }, passwords, (m) => log.appendLine(m));
-        return;
-      }
-    }
-  } catch (e) {
-    const message = (e as Error).message;
-    log.appendLine(`error: ${message}`);
-    void vscode.window.showErrorMessage(`VNC Desktop View: ${message}`);
+  const binary = findServerBinary(context.extensionPath);
+  if (!binary) {
+    // Installed packages ship bin/desktop-server.exe; a development checkout needs it built.
+    void vscode.window.showErrorMessage(
+      'The desktop server is missing from this installation. Reinstall the extension, or in a ' +
+      'development checkout run "cargo build --release" in server/.');
+    return;
   }
-}
-
-function inputBlockedMessage(s: InputState): string | null {
-  if (!s.blocked) return null;
-  if (s.reason === 'secure') {
-    return 'A UAC prompt or the lock screen is showing on the remote machine. Application mode can\'t see or control ' +
-      'it, so the picture may be frozen. Full-access mode can.';
-  }
-  const what = s.title ? `"${s.title}" (${s.process})` : s.process ? `${s.process}` : 'The focused window';
-  return `${what} is running as administrator. While it has focus, Windows blocks remote mouse and keyboard input ` +
-    'in application mode, so you can\'t click or type. Full-access mode can control administrator windows.';
-}
-
-export async function deactivate(): Promise<void> {
-  await appServer?.stop();
+  log.appendLine(`open desktop: remote=${vscode.env.remoteName ?? 'none'}`);
+  new VideoSession(context, binary, os.hostname(), (m) => log.appendLine(m));
 }

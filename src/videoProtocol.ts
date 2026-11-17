@@ -1,6 +1,4 @@
-// Messages between the video-preview webview and the extension host
-// (experimental custom server, see server/). Separate from protocol.ts, which
-// is the VNC viewer's.
+// Messages between the desktop tab (webview) and the extension host.
 
 export type VideoToExtension =
   | { type: 'ready' }                       // viewer loaded (or wants a restart)
