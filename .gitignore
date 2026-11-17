@@ -6,3 +6,4 @@ out/
 .claude/
 Screenshot*.png
 CLAUDE.md
+server/target/

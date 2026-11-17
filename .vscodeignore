@@ -14,3 +14,4 @@ esbuild.mjs
 tsconfig.json
 Screenshot*.png
 CLAUDE.md
+server/**

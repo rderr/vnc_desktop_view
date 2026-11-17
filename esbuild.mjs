@@ -27,6 +27,16 @@ const configs = [
     sourcemap: true,
   },
   {
+    // Experimental video-preview viewer (custom server in server/).
+    entryPoints: ['src/webview/video.ts'],
+    outfile: 'dist/video.js',
+    bundle: true,
+    platform: 'browser',
+    format: 'iife',
+    target: 'es2022',
+    sourcemap: true,
+  },
+  {
     // Exposed separately so it can be run/tested without VS Code.
     entryPoints: ['src/testServerCli.ts'],
     outfile: 'dist/testServer.js',

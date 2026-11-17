@@ -7,6 +7,7 @@ import { TightVncAppServer } from './windows/tightvncApp';
 import type { InputState } from './windows/foregroundWatcher';
 import { importHandoffPassword, installService, readServiceInfo, removeService } from './windows/service';
 import { PasswordStore } from './passwordStore';
+import { VideoSession, findServerBinary } from './videoSession';
 
 type ServerMode = 'app' | 'service' | 'custom';
 
@@ -42,6 +43,16 @@ export function activate(context: vscode.ExtensionContext): void {
         host: '127.0.0.1', port: server.port, label: `Test (${pick.label})`, fullAccess: true, mode: 'test',
       }, undefined, (m) => log.appendLine(m));
       session.onDidDispose(() => server.close());
+    }),
+
+    vscode.commands.registerCommand('vncDesktopView.openVideoPreview', () => {
+      const binary = findServerBinary(context.extensionPath);
+      if (!binary) {
+        void vscode.window.showErrorMessage(
+          'The video-preview server is not built. Run "cargo build --release" in the extension\'s server/ folder.');
+        return;
+      }
+      new VideoSession(context, binary, os.hostname(), (m) => log.appendLine(m));
     }),
 
     vscode.commands.registerCommand('vncDesktopView.installService', () =>

@@ -55,6 +55,11 @@
         "category": "VNC Desktop View"
       },
       {
+        "command": "vncDesktopView.openVideoPreview",
+        "title": "Open Desktop (Video Preview, experimental)",
+        "category": "VNC Desktop View"
+      },
+      {
         "command": "vncDesktopView.installService",
         "title": "Install Full-Access Mode (UAC prompts, lock screen)…",
         "category": "VNC Desktop View"

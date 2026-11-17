@@ -288,4 +288,41 @@ setInterval(() => {
   requestStreaming(); // picks up remote resolution changes
 }, 1000);
 
+/**
+ * Spike: which video codecs can this webview decode with WebCodecs? Decides
+ * what a custom (non-VNC) server should encode. Results go to the output channel.
+ */
+async function probeVideoCodecs(): Promise<void> {
+  const VD = (globalThis as { VideoDecoder?: { isConfigSupported(c: object): Promise<{ supported?: boolean }> } }).VideoDecoder;
+  if (!VD) {
+    post({ type: 'log', text: 'codec probe: WebCodecs VideoDecoder is not available in this webview' });
+    return;
+  }
+  const codecs: [string, string][] = [
+    ['H.264 baseline', 'avc1.42E01F'],
+    ['H.264 high', 'avc1.640028'],
+    ['H.265', 'hvc1.1.6.L120.90'],
+    ['VP8', 'vp8'],
+    ['VP9 profile 0', 'vp09.00.40.08'],
+    ['AV1 main', 'av01.0.08M.08'],
+  ];
+  const lines = [`codec probe (${navigator.userAgent}):`];
+  for (const [name, codec] of codecs) {
+    const results: string[] = [];
+    for (const hw of ['prefer-hardware', 'prefer-software'] as const) {
+      try {
+        const r = await VD.isConfigSupported({
+          codec, codedWidth: 1920, codedHeight: 1080, hardwareAcceleration: hw, optimizeForLatency: true,
+        });
+        results.push(`${hw.replace('prefer-', '')}=${r.supported ? 'yes' : 'no'}`);
+      } catch (e) {
+        results.push(`${hw.replace('prefer-', '')}=error(${(e as Error).message})`);
+      }
+    }
+    lines.push(`  ${name.padEnd(15)} ${codec.padEnd(20)} ${results.join('  ')}`);
+  }
+  post({ type: 'log', text: lines.join('\n') });
+}
+void probeVideoCodecs();
+
 connect();
