@@ -13,6 +13,7 @@ import { spawn } from 'child_process';
 import { WebSocketServer } from 'ws';
 import { Relay } from '../src/relay';
 import { startTestServer, type TestMode } from '../src/testServer';
+import { TightVncAppServer } from '../src/windows/tightvncApp';
 
 const [browserPath, outDir, modeArg] = process.argv.slice(2);
 const mode = (modeArg ?? 'light') as TestMode;
@@ -49,7 +50,16 @@ function decode(s: string): any {
 
 async function main(): Promise<void> {
   let bridgeSend: (m: unknown) => void = () => {};
-  const vnc = await startTestServer(mode, (fps) => bridgeSend({ type: 'serverStats', fps }));
+  // REAL_APP=<storage dir>: use real TightVNC in application mode (Windows) instead of the test server.
+  let vnc: { port: number; password?: string; close(): void };
+  if (process.env.REAL_APP) {
+    const app = new TightVncAppServer(process.env.REAL_APP, path.join(root, 'scripts', 'foreground-watch.ps1'),
+      (m) => console.log('[app]', m));
+    const lease = await app.acquire();
+    vnc = { port: lease.port, password: lease.password, close: () => void app.release() };
+  } else {
+    vnc = await startTestServer(mode, (fps) => bridgeSend({ type: 'serverStats', fps }));
+  }
 
   const httpServer = http.createServer((req, res) => {
     if (req.url === '/webview.js') { res.writeHead(200, { 'content-type': 'text/javascript' }); res.end(webviewJs); return; }
@@ -60,6 +70,9 @@ async function main(): Promise<void> {
   const latency = Number(process.env.LATENCY_MS ?? 0);
   const streaming = process.env.STREAM !== '0';
   const later = (fn: () => void) => (latency ? setTimeout(fn, latency) : fn());
+  // DROP_READY=n: simulate the server dropping the n-th connection attempt right after it opens.
+  const dropReady = Number(process.env.DROP_READY ?? 0);
+  let readyCount = 0;
   wss.on('connection', (ws) => {
     let relay: Relay | undefined;
     let conn = -1;
@@ -69,9 +82,16 @@ async function main(): Promise<void> {
       switch (msg.type) {
         case 'ready': {
           relay?.dispose();
+          relay = undefined;
           conn = msg.conn;
           const c = conn;
           bridgeSend({ type: 'init', scaleToFit: true, label: 'harness' });
+          if (++readyCount === dropReady) {
+            console.log(`[harness] simulating a dropped connection (attempt ${readyCount}, conn ${c})`);
+            bridgeSend({ type: 'open', conn: c });
+            setTimeout(() => bridgeSend({ type: 'closed', conn: c, reason: 'Connection closed by the VNC server.' }), 100);
+            break;
+          }
           relay = new Relay('127.0.0.1', vnc.port, {
             open: () => bridgeSend({ type: 'open', conn: c }),
             send: (data) => { bridgeSend({ type: 'data', conn: c, data }); return Promise.resolve(); },
@@ -83,6 +103,11 @@ async function main(): Promise<void> {
         case 'close': if (msg.conn === conn) relay?.dispose(); break;
         case 'ack': if (msg.conn === conn) relay?.ack(msg.bytes); break;
         case 'stream': if (msg.conn === conn && streaming) relay?.stream(msg.width, msg.height); break;
+        case 'needCredentials':
+          console.log('[harness] viewer -> needCredentials (conn', msg.conn, ')');
+          bridgeSend({ type: 'credentials', conn: msg.conn, password: vnc.password ?? '' });
+          break;
+        case 'log': console.log('[harness] viewer log:', msg.text); break;
         default: console.log('[harness] viewer ->', msg.type, msg.desktopName ?? '');
       }
     }));
@@ -109,9 +134,11 @@ async function main(): Promise<void> {
     console.log('status:', await evalText(`document.getElementById('status').textContent`));
 
     // Draw a diagonal line by dragging, then press a key (changes the square's colour).
+    // Only against the fake test server: on a real desktop this would click and type into real windows.
     const canvas = await evalText(`(() => { const r = document.querySelector('#screen canvas').getBoundingClientRect(); return [r.x, r.y, r.width, r.height]; })()`);
     console.log('canvas rect:', canvas.map((n: number) => Math.round(n)).join(', '));
     const [cx, cy, cw, ch] = canvas;
+    if (!process.env.REAL_APP) {
     await cdp('Input.dispatchMouseEvent', { type: 'mousePressed', x: cx + cw * 0.3, y: cy + ch * 0.3, button: 'left', clickCount: 1 });
     for (let i = 0; i <= 40; i++) {
       await cdp('Input.dispatchMouseEvent', { type: 'mouseMoved', x: cx + cw * (0.3 + i * 0.01), y: cy + ch * (0.3 + i * 0.01), button: 'left', buttons: 1 });
@@ -119,9 +146,22 @@ async function main(): Promise<void> {
     await cdp('Input.dispatchMouseEvent', { type: 'mouseReleased', x: cx + cw * 0.7, y: cy + ch * 0.7, button: 'left', clickCount: 1 });
     await cdp('Input.dispatchKeyEvent', { type: 'keyDown', key: 'a', code: 'KeyA', text: 'a', windowsVirtualKeyCode: 65 });
     await cdp('Input.dispatchKeyEvent', { type: 'keyUp', key: 'a', code: 'KeyA', windowsVirtualKeyCode: 65 });
+    }
 
     await new Promise((r) => setTimeout(r, 3500));
     console.log('stats:', await evalText(`document.getElementById('stats').textContent`));
+
+    // RECONNECT=1: one click on Reconnect should end up connected again.
+    if (process.env.RECONNECT === '1') {
+      const snapshot = `JSON.stringify({ status: document.getElementById('status').textContent,
+        message: document.getElementById('message').hidden ? null : document.getElementById('message').textContent,
+        canvases: document.querySelectorAll('#screen canvas').length })`;
+      await evalText(`document.getElementById('reconnect').click()`);
+      for (const ms of [0, 300, 1000, 3000]) {
+        await new Promise((r) => setTimeout(r, ms));
+        console.log(`after one Reconnect click (+${ms} ms):`, await evalText(snapshot));
+      }
+    }
     const shot = await cdp('Page.captureScreenshot', { format: 'png' });
     const file = path.join(outDir, `viewer-${mode}.png`);
     fs.writeFileSync(file, Buffer.from(shot.data, 'base64'));

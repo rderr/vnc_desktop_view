@@ -4,6 +4,16 @@ All notable changes to the VNC Desktop View extension will be documented in this
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-11-16
+
+### Fixed
+- The full-access password only worked on the computer that installed full-access mode: it was saved in VS Code's secret storage, which lives on the computer you connect *from*. Remembered passwords are now stored on the remote machine (encrypted with DPAPI on Windows), so every computer that connects to it can use them
+- Passwords saved by 0.1.0 move to the remote machine automatically the next time you connect from the computer that has them
+- **Reconnect** sometimes needed two clicks in full-access mode: the old connection is now closed gracefully and fully before the new one opens, and a connection that drops while starting up is retried automatically (up to 3 attempts; never after a failed login)
+
+### Added
+- Connection events (connect, login, disconnect and why) are logged in the **VNC Desktop View** output channel
+
 ## [0.1.0] - 2026-11-16
 
 First public preview.

@@ -43,14 +43,34 @@ export class Relay {
   private bytesAcked = 0;
   private streamTimer: NodeJS.Timeout | undefined;
   private updateRequest: Buffer | undefined;
+  /** Resolves once the TCP socket is fully closed. */
+  private readonly socketClosed: Promise<void>;
 
   constructor(host: string, port: number, private readonly sink: RelaySink) {
     this.socket = net.connect({ host, port });
+    this.socketClosed = new Promise((resolve) => this.socket.once('close', () => resolve()));
     this.socket.setNoDelay(true);
     this.socket.on('connect', () => sink.open());
     this.socket.on('data', (chunk) => this.onData(chunk));
     this.socket.on('error', (err) => this.finish(describeError(err, host, port)));
     this.socket.on('close', () => this.finish('Connection closed by the VNC server.'));
+  }
+
+  /**
+   * Close gracefully (FIN rather than an abrupt reset) and resolve once the
+   * socket is closed, or after timeoutMs. Used on reconnect so the server has
+   * finished with the old connection before the new one arrives.
+   */
+  async disposeAndWait(timeoutMs = 1000): Promise<void> {
+    if (this.streamTimer) clearInterval(this.streamTimer);
+    this.done = true;
+    this.pending = [];
+    this.socket.end();
+    const timedOut = await Promise.race([
+      this.socketClosed.then(() => false),
+      new Promise<boolean>((r) => setTimeout(() => r(true), timeoutMs)),
+    ]);
+    if (timedOut) this.socket.destroy();
   }
 
   /** Bytes from the viewer to the VNC server. */

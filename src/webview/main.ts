@@ -123,49 +123,80 @@ function requestStreaming(): void {
   post({ type: 'stream', conn: channel.conn, width: w, height: h });
 }
 
-function connect(): void {
+// A connection that drops before it's established (or within a few seconds of it)
+// is retried automatically. Some servers — e.g. the TightVNC service — can drop a
+// new connection that arrives while they're still tearing down the previous one.
+const MAX_ATTEMPTS = 3;
+const RETRY_DELAY_MS = [0, 700, 1500];
+const EARLY_DROP_MS = 3000;
+let retryTimer: ReturnType<typeof setTimeout> | undefined;
+
+function connect(attempt = 1): void {
+  clearTimeout(retryTimer);
   streamedSize = '';
-  if (rfb) {
-    rfb.disconnect();
-    rfb = undefined;
-  }
+  // Detach the old connection BEFORE closing it, so its (possibly synchronous)
+  // disconnect event is recognised as stale and doesn't trigger a retry.
+  const old = rfb;
+  rfb = undefined;
+  old?.disconnect();
+
   lastDisconnectReason = '';
   stats.serverFps = undefined;
   const conn = nextConn++;
   channel = new PostMessageChannel(conn);
-  setStatus('Connecting…');
+  setStatus(attempt === 1 ? 'Connecting…' : `Reconnecting… (attempt ${attempt} of ${MAX_ATTEMPTS})`);
   showMessage(null);
 
-  rfb = new RFB(screenEl, channel, { shared: true });
-  rfb.scaleViewport = scaleToFit;
-  rfb.clipViewport = !scaleToFit;
-  rfb.resizeSession = false;
-  rfb.focusOnClick = true;
+  const thisRfb = new RFB(screenEl, channel, { shared: true });
+  rfb = thisRfb;
+  const isCurrent = () => rfb === thisRfb;
+  let connectedAt = 0;
+  let authFailed = false;
 
-  rfb.addEventListener('connect', () => {
+  thisRfb.scaleViewport = scaleToFit;
+  thisRfb.clipViewport = !scaleToFit;
+  thisRfb.resizeSession = false;
+  thisRfb.focusOnClick = true;
+
+  thisRfb.addEventListener('connect', () => {
+    if (!isCurrent()) return;
+    connectedAt = Date.now();
     setStatus('Connected');
     showMessage(null);
-    post({ type: 'connected', conn, desktopName: rfb?._fbName ?? '' });
+    post({ type: 'connected', conn, desktopName: thisRfb._fbName ?? '' });
     requestStreaming();
-    rfb?.focus();
+    thisRfb.focus();
   });
-  rfb.addEventListener('desktopname', (e: CustomEvent<{ name: string }>) => {
-    post({ type: 'connected', conn, desktopName: e.detail.name });
+  thisRfb.addEventListener('desktopname', (e: CustomEvent<{ name: string }>) => {
+    if (isCurrent()) post({ type: 'connected', conn, desktopName: e.detail.name });
   });
-  rfb.addEventListener('disconnect', (e: CustomEvent<{ clean: boolean }>) => {
+  thisRfb.addEventListener('disconnect', (e: CustomEvent<{ clean: boolean }>) => {
+    if (!isCurrent()) return; // a connection we replaced on purpose
     const why = lastDisconnectReason || (e.detail.clean ? 'Disconnected.' : 'Connection lost.');
+    const droppedEarly = !connectedAt || Date.now() - connectedAt < EARLY_DROP_MS;
+    post({ type: 'log', text: `connection ${conn} closed (attempt ${attempt}, ${connectedAt ? 'after connecting' : 'before connecting'}): ${why}` });
+    // Never retry after a failed login: TightVNC locks out the machine briefly after one.
+    if (droppedEarly && !authFailed && attempt < MAX_ATTEMPTS) {
+      setStatus(`Reconnecting… (attempt ${attempt + 1} of ${MAX_ATTEMPTS})`);
+      retryTimer = setTimeout(() => { if (isCurrent()) connect(attempt + 1); }, RETRY_DELAY_MS[attempt]);
+      return;
+    }
     setStatus('Disconnected');
     showMessage(why);
   });
-  rfb.addEventListener('credentialsrequired', (e: CustomEvent<{ types: string[] }>) => {
+  thisRfb.addEventListener('credentialsrequired', (e: CustomEvent<{ types: string[] }>) => {
+    if (!isCurrent()) return;
     setStatus('Waiting for password…');
     post({ type: 'needCredentials', conn, types: e.detail.types });
   });
-  rfb.addEventListener('securityfailure', (e: CustomEvent<{ status: number; reason?: string }>) => {
+  thisRfb.addEventListener('securityfailure', (e: CustomEvent<{ status: number; reason?: string }>) => {
+    if (!isCurrent()) return;
+    authFailed = true;
     lastDisconnectReason = `Authentication failed${e.detail.reason ? `: ${e.detail.reason}` : ''}.`;
     post({ type: 'authFailed', conn, reason: e.detail.reason ?? '' });
   });
-  rfb.addEventListener('clipboard', (e: CustomEvent<{ text: string }>) => {
+  thisRfb.addEventListener('clipboard', (e: CustomEvent<{ text: string }>) => {
+    if (!isCurrent()) return;
     post({ type: 'clipboard', text: e.detail.text });
   });
 

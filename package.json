@@ -2,7 +2,7 @@
   "name": "vnc-desktop-view",
   "displayName": "VNC Desktop View",
   "description": "See and control your remote machine's desktop in an editor tab, over your existing Remote Tunnels / Remote-SSH connection",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "preview": true,
   "license": "MIT",
   "author": "Rob Derr <robjderr@gmail.com>",

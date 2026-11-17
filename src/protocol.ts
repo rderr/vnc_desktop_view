@@ -16,7 +16,8 @@ export type ToExtension =
   | { type: 'authFailed'; conn: number; reason: string }
   | { type: 'clipboard'; text: string }                     // remote clipboard changed
   | { type: 'pasteRequest' }                                // user clicked "Paste to remote"
-  | { type: 'installFullAccess' };                          // banner button
+  | { type: 'installFullAccess' }                           // banner button
+  | { type: 'log'; text: string };                          // diagnostic line for the output channel
 
 export type ToWebview =
   | { type: 'init'; scaleToFit: boolean; label: string; fullAccess: boolean;

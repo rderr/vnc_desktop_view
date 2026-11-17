@@ -6,14 +6,18 @@ import { showManualSetup } from './setup';
 import { TightVncAppServer } from './windows/tightvncApp';
 import type { InputState } from './windows/foregroundWatcher';
 import { importHandoffPassword, installService, readServiceInfo, removeService } from './windows/service';
+import { PasswordStore } from './passwordStore';
 
 type ServerMode = 'app' | 'service' | 'custom';
 
 let appServer: TightVncAppServer | undefined;
+/** Remembered passwords, stored on the remote machine (see passwordStore.ts). */
+let passwords: PasswordStore;
 
 export function activate(context: vscode.ExtensionContext): void {
   const log = vscode.window.createOutputChannel('VNC Desktop View');
   context.subscriptions.push(log);
+  passwords = new PasswordStore(context.globalStorageUri.fsPath);
   appServer = new TightVncAppServer(
     context.globalStorageUri.fsPath,
     vscode.Uri.joinPath(context.extensionUri, 'scripts', 'foreground-watch.ps1').fsPath,
@@ -36,7 +40,7 @@ export function activate(context: vscode.ExtensionContext): void {
       const server = await startTestServer(pick.mode, (fps) => void session?.post({ type: 'serverStats', fps }));
       session = new DesktopSession(context, {
         host: '127.0.0.1', port: server.port, label: `Test (${pick.label})`, fullAccess: true, mode: 'test',
-      });
+      }, undefined, (m) => log.appendLine(m));
       session.onDidDispose(() => server.close());
     }),
 
@@ -44,14 +48,20 @@ export function activate(context: vscode.ExtensionContext): void {
       process.platform === 'win32' ? installService(context) : showManualSetup()),
 
     vscode.commands.registerCommand('vncDesktopView.removeService', () =>
-      process.platform === 'win32' ? removeService(context) : undefined),
+      process.platform === 'win32' ? removeService(context, passwords) : undefined),
 
     vscode.commands.registerCommand('vncDesktopView.forgetPassword', async () => {
       const cfg = vscode.workspace.getConfiguration('vncDesktopView');
-      await context.secrets.delete(`vncPassword:${cfg.get('host', '127.0.0.1')}:${cfg.get('port', 5900)}`);
+      const targets: [string, number][] = [[cfg.get('host', '127.0.0.1'), cfg.get('port', 5900)]];
       const svc = readServiceInfo();
-      if (svc) await context.secrets.delete(`vncPassword:127.0.0.1:${svc.port}`);
-      void vscode.window.showInformationMessage('Saved VNC passwords removed.');
+      if (svc) targets.push(['127.0.0.1', svc.port]);
+      for (const [host, port] of targets) {
+        await passwords.delete(PasswordStore.key(host, port)).catch(() => undefined);
+        await context.secrets.delete(`vncPassword:${host}:${port}`); // where 0.1.0 kept them
+      }
+      void vscode.window.showInformationMessage(
+        'Saved VNC passwords removed. Note: the full-access password was generated during setup; ' +
+        'to get a new one, run "Install Full-Access Mode" again.');
     }),
   );
 }
@@ -98,7 +108,7 @@ async function openDesktop(context: vscode.ExtensionContext, log: vscode.OutputC
         );
         const session = new DesktopSession(context, {
           host: '127.0.0.1', port: lease.port, label, password: lease.password, fullAccess: false, mode: 'app',
-        });
+        }, undefined, (m) => log.appendLine(m));
         // Explain when Windows silently drops our input (admin window focused, UAC prompt, lock screen).
         const unsubscribe = server.inputWatcher.subscribe((s) => {
           session.setBanner(inputBlockedMessage(s), s.blocked);
@@ -117,15 +127,16 @@ async function openDesktop(context: vscode.ExtensionContext, log: vscode.OutputC
           if (choice) await installService(context);
           return;
         }
-        await importHandoffPassword(context, info.port);
-        new DesktopSession(context, { host: '127.0.0.1', port: info.port, label, fullAccess: true, mode: 'service' });
+        await importHandoffPassword(context, passwords, info.port);
+        new DesktopSession(context, { host: '127.0.0.1', port: info.port, label, fullAccess: true, mode: 'service' },
+          passwords, (m) => log.appendLine(m));
         return;
       }
       case 'custom': {
         const cfg = vscode.workspace.getConfiguration('vncDesktopView');
         new DesktopSession(context, {
           host: cfg.get('host', '127.0.0.1'), port: cfg.get('port', 5900), label, fullAccess: true, mode: 'custom',
-        });
+        }, passwords, (m) => log.appendLine(m));
         return;
       }
     }

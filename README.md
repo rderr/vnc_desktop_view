@@ -89,7 +89,7 @@ The `vncDesktopView.server` setting chooses the VNC server. The toolbar badge an
 | **Install Full-Access Mode** | Install the TightVNC service on a Windows remote (UAC prompts, lock screen) |
 | **Remove Full-Access Mode** | Remove it again (uninstalls TightVNC only if the extension installed it) |
 | **Open Test Desktop** | Built-in fake desktop for checking speed and input |
-| **Forget Saved VNC Password** | Remove the stored password for custom / full-access servers |
+| **Forget Saved VNC Password** | Remove the remembered password for custom / full-access servers (stored on the remote machine) |
 
 ## Settings
 
@@ -108,7 +108,7 @@ The `vncDesktopView.server` setting chooses the VNC server. The toolbar badge an
 - **Changes to the remote machine.**
   - Application mode writes TightVNC settings to `HKCU\Software\TightVNC\Server` while a tab is open, and puts back any settings you had there afterwards.
   - Full-access mode installs the TightVNC service and writes `%ProgramData%\vnc-desktop-view\service.json`.
-- **Passwords.** Application mode uses a new random password for every session and never stores it. Full-access and custom passwords are kept in VS Code's secret storage. VNC passwords are limited to 8 characters, which is why the servers only accept local connections.
+- **Passwords.** Application mode uses a new random password for every session and never stores it. Full-access and custom passwords are remembered **on the remote machine**, in the extension's storage folder there, so any computer you connect from can use them and they never leave that machine. On Windows they're encrypted with DPAPI so only your Windows account can read them; on macOS and Linux the file is readable only by your account. Trade-off: in full-access mode, a program running as your account on the remote could read that password and use the service to answer a UAC prompt. Microsoft doesn't treat UAC as a security boundary, but keep it in mind on shared machines. VNC passwords are limited to 8 characters, which is why the servers only accept local connections.
 - **Brute-force lockout.** After a failed login TightVNC briefly refuses all connections from the same machine, so a wrong saved password causes a short lockout.
 
 ## Known Issues
@@ -167,6 +167,7 @@ src/
 ├── extension.ts              # Commands, mode selection
 ├── session.ts                # One desktop tab: webview panel, credentials, clipboard
 ├── relay.ts                  # TCP <-> webview message pipe, flow control, update streaming
+├── passwordStore.ts          # Remembered passwords, kept on the remote machine (DPAPI on Windows)
 ├── protocol.ts               # Messages between the tab and the extension
 ├── testServer.ts             # Built-in fake VNC server
 ├── setup.ts                  # macOS / Linux setup instructions
@@ -183,6 +184,7 @@ scripts/
 └── build-notices.mjs         # Generates ThirdPartyNotices.txt
 test/
 ├── relay-test.mjs            # RFB protocol test against the test server
+├── password-store-test.ts    # Password store round trip and encryption
 ├── app-mode-test.ts          # Application mode on a real Windows machine
 └── browser-harness.ts        # Viewer end-to-end in a headless browser
 ```

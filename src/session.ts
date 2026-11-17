@@ -1,13 +1,14 @@
 import * as vscode from 'vscode';
 import * as crypto from 'crypto';
 import { Relay } from './relay';
+import { PasswordStore, type StoredCredentials } from './passwordStore';
 import type { ToExtension, ToWebview } from './protocol';
 
 export interface Target {
   host: string;
   port: number;
   label: string;
-  /** Known password (application mode generates one per run); otherwise ask / use secret storage. */
+  /** Known password (application mode generates one per run); otherwise ask / use the remote password store. */
   password?: string;
   /** Whether the server can reach UAC prompts / lock screen (and so Ctrl+Alt+Del makes sense). */
   fullAccess: boolean;
@@ -24,14 +25,21 @@ export type ConnectionMode = 'app' | 'service' | 'custom' | 'test';
 export class DesktopSession {
   private readonly panel: vscode.WebviewPanel;
   private relay: Relay | undefined;
+  /** A connection the viewer closed, still shutting down; a reconnect waits for it. */
+  private closing: Promise<void> | undefined;
   private conn = -1;
-  private pendingCredentials: { username?: string; password: string } | undefined;
+  /** Credentials sent to the server but not yet confirmed; saved to the store once the login succeeds. */
+  private pendingCredentials: StoredCredentials | undefined;
+  /** The pending credentials came from 0.1.0's secret storage (on the computer we connect from) and should move to the store. */
+  private migratingLegacySecret = false;
   private readonly disposables: vscode.Disposable[] = [];
   private onDisposeCallbacks: (() => void)[] = [];
 
   constructor(
     private readonly context: vscode.ExtensionContext,
     private readonly target: Target,
+    private readonly passwords?: PasswordStore,
+    private readonly log: (msg: string) => void = () => {},
   ) {
     const distUri = vscode.Uri.joinPath(context.extensionUri, 'dist');
     this.panel = vscode.window.createWebviewPanel(
@@ -66,17 +74,55 @@ export class DesktopSession {
     return this.panel.webview.postMessage(msg);
   }
 
-  private secretKey(): string {
+  private storeKey(): string {
+    return PasswordStore.key(this.target.host, this.target.port);
+  }
+
+  /** Where 0.1.0 kept passwords: VS Code secret storage, which lives on the computer you connect from. */
+  private legacySecretKey(): string {
     return `vncPassword:${this.target.host}:${this.target.port}`;
+  }
+
+  private async rememberPendingCredentials(): Promise<void> {
+    const creds = this.pendingCredentials;
+    this.pendingCredentials = undefined;
+    if (!creds || !this.passwords) return;
+    try {
+      await this.passwords.set(this.storeKey(), creds);
+      if (this.migratingLegacySecret) await this.context.secrets.delete(this.legacySecretKey());
+    } catch (e) {
+      void vscode.window.showWarningMessage(`Could not save the VNC password on the remote machine: ${(e as Error).message}`);
+    } finally {
+      this.migratingLegacySecret = false;
+    }
+  }
+
+  private async forgetCredentials(): Promise<void> {
+    this.pendingCredentials = undefined;
+    this.migratingLegacySecret = false;
+    await this.passwords?.delete(this.storeKey()).catch(() => undefined);
+    await this.context.secrets.delete(this.legacySecretKey());
   }
 
   private async onMessage(msg: ToExtension): Promise<void> {
     switch (msg.type) {
       case 'ready': {
-        // Viewer asked for a (re)connection. Drop any previous socket.
-        this.relay?.dispose();
+        // Viewer asked for a (re)connection. Close any previous socket first and
+        // wait until it's really closed: some servers (the TightVNC service) drop
+        // a new connection that arrives while the old one is still being torn down.
         this.conn = msg.conn;
         const conn = msg.conn;
+        const old = this.relay;
+        this.relay = undefined;
+        const closing = [this.closing, old?.disposeAndWait()].filter(Boolean);
+        this.closing = undefined;
+        if (closing.length) {
+          await Promise.all(closing);
+          await new Promise((r) => setTimeout(r, 200));
+          if (this.conn !== conn) return; // an even newer reconnect superseded this one
+        }
+        const where = `${this.target.host}:${this.target.port}`;
+        this.log(`connection ${conn}: connecting to ${where} (${this.target.mode})`);
         const cfg = vscode.workspace.getConfiguration('vncDesktopView');
         void this.post({
           type: 'init', scaleToFit: cfg.get('scaleToFit', true), label: this.target.label, fullAccess: this.target.fullAccess,
@@ -84,18 +130,28 @@ export class DesktopSession {
         });
         if (this.banner) void this.post(this.banner);
         this.relay = new Relay(this.target.host, this.target.port, {
-          open: () => void this.post({ type: 'open', conn }),
+          open: () => {
+            this.log(`connection ${conn}: TCP connected`);
+            void this.post({ type: 'open', conn });
+          },
           send: (data) => this.post({ type: 'data', conn, data }),
-          closed: (reason) => void this.post({ type: 'closed', conn, reason }),
+          closed: (reason) => {
+            this.log(`connection ${conn}: closed by server side: ${reason}`);
+            void this.post({ type: 'closed', conn, reason });
+          },
         });
         break;
       }
+      case 'log':
+        this.log(msg.text);
+        break;
       case 'data':
         if (msg.conn === this.conn) this.relay?.write(toBytes(msg.data));
         break;
       case 'close':
-        if (msg.conn === this.conn) {
-          this.relay?.dispose();
+        if (msg.conn === this.conn && this.relay) {
+          this.log(`connection ${msg.conn}: closed by viewer`);
+          this.closing = this.relay.disposeAndWait();
           this.relay = undefined;
         }
         break;
@@ -109,16 +165,13 @@ export class DesktopSession {
         await this.provideCredentials(msg.conn, msg.types);
         break;
       case 'connected':
+        this.log(`connection ${msg.conn}: logged in${msg.desktopName ? ` to "${msg.desktopName}"` : ''}`);
         // Only remember a password once the server has accepted it.
-        if (this.pendingCredentials) {
-          await this.context.secrets.store(this.secretKey(), JSON.stringify(this.pendingCredentials));
-          this.pendingCredentials = undefined;
-        }
+        await this.rememberPendingCredentials();
         if (msg.desktopName) this.panel.title = tabTitle(msg.desktopName, this.target.mode);
         break;
       case 'authFailed':
-        this.pendingCredentials = undefined;
-        await this.context.secrets.delete(this.secretKey());
+        await this.forgetCredentials();
         void vscode.window.showErrorMessage(`VNC authentication failed: ${msg.reason || 'wrong password?'} Use Reconnect to try again.`);
         break;
       case 'clipboard':
@@ -139,10 +192,20 @@ export class DesktopSession {
       void this.post({ type: 'credentials', conn, password: this.target.password });
       return;
     }
-    const saved = await this.context.secrets.get(this.secretKey());
-    if (saved) {
-      const creds = JSON.parse(saved) as { username?: string; password: string };
-      void this.post({ type: 'credentials', conn, ...creds });
+    const stored = await this.passwords?.get(this.storeKey()).catch((e: Error) => {
+      void vscode.window.showWarningMessage(`Could not read saved VNC passwords: ${e.message}`);
+      return undefined;
+    });
+    if (stored) {
+      void this.post({ type: 'credentials', conn, ...stored });
+      return;
+    }
+    // Saved by 0.1.0 on this client? Use it, and move it to the remote once it works.
+    const legacy = await this.context.secrets.get(this.legacySecretKey());
+    if (legacy) {
+      this.pendingCredentials = JSON.parse(legacy) as StoredCredentials;
+      this.migratingLegacySecret = true;
+      void this.post({ type: 'credentials', conn, ...this.pendingCredentials });
       return;
     }
     let username: string | undefined;
@@ -156,7 +219,7 @@ export class DesktopSession {
     }
     const password = await vscode.window.showInputBox({
       title: `Remote desktop: ${this.target.label}`,
-      prompt: 'VNC password (saved in VS Code secret storage after a successful login)',
+      prompt: 'VNC password (remembered on the remote machine after a successful login)',
       password: true,
       ignoreFocusOut: true,
     });
