@@ -2,6 +2,7 @@
 // third-party code (noVNC and the pako copy it vendors), so the notices
 // always match the installed versions.
 import * as fs from 'fs';
+import { serverDependencies } from './server-notices.mjs';
 
 const novnc = 'node_modules/@novnc/novnc';
 const version = JSON.parse(fs.readFileSync(`${novnc}/package.json`, 'utf8')).version;
@@ -12,7 +13,8 @@ const opusDecoderVersion = JSON.parse(fs.readFileSync('node_modules/opus-decoder
 const text = `THIRD-PARTY NOTICES
 
 This extension bundles the third-party software listed below (inside
-dist/webview.js, dist/video.js and dist/extension.js). The files are used unmodified.
+dist/webview.js, dist/video.js and dist/extension.js, and in Windows packages
+bin/desktop-server.exe). The files are used unmodified.
 
 TightVNC is NOT included in this package. On Windows the extension downloads
 the official TightVNC 2.8.89 installer from https://www.tightvnc.com when
@@ -104,5 +106,39 @@ NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 `;
 
-fs.writeFileSync('ThirdPartyNotices.txt', text);
-console.log(`ThirdPartyNotices.txt written (noVNC ${version})`);
+// The desktop server (bin/desktop-server.exe, Windows packages only). Licenses
+// with identical text are printed once, listing the packages that use them.
+let serverText = '';
+try {
+  const deps = serverDependencies();
+  const groups = new Map(); // license text -> [package labels]
+  for (const d of deps) {
+    for (const t of d.texts) {
+      const key = t.text.replace(/\r\n/g, '\n');
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(`${d.name} ${d.version} (${t.file})`);
+    }
+  }
+  serverText = `
+${rule}
+desktop-server.exe (Windows packages, bin/): Rust crates compiled into it
+${rule}
+
+${deps.map((d) => `  ${d.name} ${d.version} — ${d.license}${d.repository ? ` — ${d.repository}` : ''}`).join('\n')}
+
+libopus (inside opusic-sys) is BSD-3-Clause; its license is among the texts below.
+H.264 encoding uses the encoders that come with Windows (Media Foundation);
+no H.264 encoder is included.
+` + [...groups].map(([body, users]) => `
+${rule}
+${users.join('\n')}
+${rule}
+
+${body}
+`).join('');
+} catch (e) {
+  console.warn(`server notices skipped (${e.message.split('\n')[0]}); is Rust installed?`);
+}
+
+fs.writeFileSync('ThirdPartyNotices.txt', text + serverText);
+console.log(`ThirdPartyNotices.txt written (noVNC ${version}${serverText ? ', desktop server' : ''})`);

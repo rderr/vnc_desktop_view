@@ -7,3 +7,4 @@ out/
 Screenshot*.png
 CLAUDE.md
 server/target/
+bin/

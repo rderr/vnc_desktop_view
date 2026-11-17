@@ -25,6 +25,7 @@ mod audio;
 mod capture;
 mod clipboard;
 mod encoder;
+mod gpu;
 mod input;
 mod mf;
 
@@ -52,7 +53,7 @@ fn main() -> Result<()> {
 /// Starts capturing the current desktop with an encoder sized to match.
 fn open(encoder_kind: &str) -> Result<(Capturer, Box<dyn VideoEncoder>)> {
     let capturer = Capturer::new()?;
-    let encoder = encoder::create(encoder_kind, capturer.width, capturer.height)?;
+    let encoder = encoder::create(encoder_kind, &capturer)?;
     eprintln!(
         "desktop-server: capturing {}x{}, encoding {}x{} with {} ({})",
         capturer.src_width,
@@ -67,19 +68,18 @@ fn open(encoder_kind: &str) -> Result<(Capturer, Box<dyn VideoEncoder>)> {
 
 fn record(capturer: &mut Capturer, encoder: &mut dyn VideoEncoder, path: &str, duration: Duration) -> Result<()> {
     let mut file = std::fs::File::create(path)?;
-    let mut bgra = Vec::new();
     let start = Instant::now();
     let (mut frames, mut bytes, mut encode_time, mut worst) = (0u32, 0usize, Duration::ZERO, Duration::ZERO);
     let mut have_image = false;
     while start.elapsed() < duration {
         // Wait (up to 1 s) for the first image even if the screen is idle.
-        match capturer.next(if have_image { 100 } else { 1000 }, &mut bgra)? {
+        match capturer.next(if have_image { 100 } else { 1000 })? {
             Frame::Changed => have_image = true,
             Frame::Unchanged => continue,
             Frame::Lost(why) => anyhow::bail!("capture lost: {why}"),
         }
         let t = Instant::now();
-        let (data, key) = encoder.encode(&bgra, start.elapsed().as_micros() as u64)?;
+        let (data, key) = encoder.encode(capturer, start.elapsed().as_micros() as u64)?;
         let took = t.elapsed();
         encode_time += took;
         worst = worst.max(took);
@@ -175,7 +175,6 @@ fn stream(encoder_kind: &str) -> Result<()> {
     let mut session: Option<(Capturer, Box<dyn VideoEncoder>)> = None;
     // The notice currently shown, so it's sent only when it changes.
     let mut notice = NOTICE_CLEAR;
-    let mut bgra = Vec::new();
     let min_interval = Duration::from_secs_f32(1.0 / MAX_FPS as f32);
     let mut last_sent = Instant::now() - min_interval;
     let mut have_image = false;
@@ -211,7 +210,7 @@ fn stream(encoder_kind: &str) -> Result<()> {
             continue;
         };
 
-        match capturer.next(100, &mut bgra) {
+        match capturer.next(100) {
             Ok(Frame::Changed) => {
                 have_image = true;
                 need_send = true;
@@ -243,7 +242,7 @@ fn stream(encoder_kind: &str) -> Result<()> {
             std::thread::sleep(min_interval - since);
         }
         let ts = start.elapsed().as_micros() as u64;
-        let (data, key) = match encoder.encode(&bgra, ts) {
+        let (data, key) = match encoder.encode(capturer, ts) {
             Ok(r) => r,
             Err(e) => {
                 // e.g. the GPU was reset; start over with a fresh capturer and encoder.

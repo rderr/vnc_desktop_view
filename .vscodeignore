@@ -15,3 +15,5 @@ tsconfig.json
 Screenshot*.png
 CLAUDE.md
 server/**
+scripts/package.mjs
+scripts/server-notices.mjs

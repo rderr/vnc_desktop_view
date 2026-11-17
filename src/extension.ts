@@ -46,10 +46,17 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
 
     vscode.commands.registerCommand('vncDesktopView.openVideoPreview', () => {
+      if (process.platform !== 'win32') {
+        void vscode.window.showInformationMessage(
+          'The video preview is only available on Windows remotes so far. Use "Open Desktop" (VNC) on this machine.');
+        return;
+      }
       const binary = findServerBinary(context.extensionPath);
       if (!binary) {
+        // Installed packages ship bin/desktop-server.exe; a development checkout needs it built.
         void vscode.window.showErrorMessage(
-          'The video-preview server is not built. Run "cargo build --release" in the extension\'s server/ folder.');
+          'The video-preview server is missing from this installation. Reinstall the extension, or in a ' +
+          'development checkout run "cargo build --release" in server/.');
         return;
       }
       new VideoSession(context, binary, os.hostname(), (m) => log.appendLine(m));
