@@ -69,6 +69,9 @@ export class VideoSession {
         this.send(3, p);
         break;
       }
+      case 'audio':
+        this.send(4, Buffer.from([msg.enabled ? 1 : 0]));
+        break;
       case 'log':
         this.log(msg.text);
         break;
@@ -130,6 +133,10 @@ export class VideoSession {
         const data = new Uint8Array(payload.subarray(9));
         this.sent += data.byteLength;
         void this.post({ type: 'video', key, timestamp, data });
+      } else if (kind === 3) {
+        // Audio is small (~16 KB/s) and not counted against the video flow-control window.
+        const timestamp = Number(payload.readBigUInt64LE(0));
+        void this.post({ type: 'audio', timestamp, data: new Uint8Array(payload.subarray(8)) });
       }
     }
     if (!this.paused && this.sent - this.acked > MAX_UNACKED) {
@@ -151,7 +158,9 @@ export class VideoSession {
     const webview = this.panel.webview;
     const script = webview.asWebviewUri(vscode.Uri.joinPath(distUri, 'video.js'));
     const nonce = crypto.randomBytes(16).toString('base64');
-    const csp = [`default-src 'none'`, `style-src ${webview.cspSource} 'unsafe-inline'`, `script-src 'nonce-${nonce}'`].join('; ');
+    const csp = [`default-src 'none'`, `style-src ${webview.cspSource} 'unsafe-inline'`,
+      // wasm-unsafe-eval: the Opus audio decoder is WebAssembly.
+      `script-src 'nonce-${nonce}' 'wasm-unsafe-eval'`].join('; ');
     return /* html */ `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -178,6 +187,7 @@ export class VideoSession {
   <div id="toolbar">
     <button id="fit" aria-pressed="true">Fit</button>
     <button id="restart">Restart</button>
+    <button id="sound" aria-pressed="false" title="Play the remote machine's sound here">Sound off</button>
     <span id="badge" title="Experimental custom server (H.264 over VS Code's connection).">Video preview</span>
     <span id="status">Starting…</span>
     <span id="stats"></span>

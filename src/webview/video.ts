@@ -3,6 +3,7 @@
 
 import type { VideoToExtension, VideoToWebview } from '../videoProtocol';
 import { scanCode } from './scancodes';
+import { AudioPlayer } from './audio';
 
 declare function acquireVsCodeApi(): { postMessage(msg: unknown): void };
 const vscode = acquireVsCodeApi();
@@ -63,7 +64,15 @@ window.addEventListener('message', (event: MessageEvent<VideoToWebview>) => {
       needKey = true;
       newDecoder();
       setStatus(`Connected · ${msg.width}×${msg.height}`);
+      // A (re)started server sends no audio until asked.
+      if (soundWanted && player.running) post({ type: 'audio', enabled: true });
       break;
+    case 'audio': {
+      const data = msg.data instanceof Uint8Array ? msg.data : new Uint8Array(msg.data as ArrayBufferLike);
+      stats.bytes += data.byteLength;
+      player.push(data);
+      break;
+    }
     case 'video': {
       const data = msg.data instanceof Uint8Array ? msg.data : new Uint8Array(msg.data as ArrayBufferLike);
       stats.bytes += data.byteLength;
@@ -157,6 +166,38 @@ fitBtn.addEventListener('click', () => {
   fitBtn.setAttribute('aria-pressed', String(fit));
 });
 $('restart').addEventListener('click', () => post({ type: 'ready' }));
+
+// ---- Sound -------------------------------------------------------------
+// On by default, but browsers only allow audio to start from a user gesture,
+// so it actually begins on the first click or key press in the desktop.
+
+const player = new AudioPlayer((text) => post({ type: 'log', text }));
+const soundBtn = $<HTMLButtonElement>('sound');
+let soundWanted = true;
+
+function updateSoundButton(): void {
+  soundBtn.textContent = !soundWanted ? 'Sound off' : player.running ? 'Sound on' : 'Sound: click desktop';
+  soundBtn.setAttribute('aria-pressed', String(soundWanted && player.running));
+}
+
+async function startSound(): Promise<void> {
+  if (soundWanted && !player.running && (await player.start())) post({ type: 'audio', enabled: true });
+  updateSoundButton();
+}
+
+soundBtn.addEventListener('click', () => {
+  soundWanted = !(soundWanted && player.running);
+  if (soundWanted) {
+    void startSound();
+  } else {
+    player.stop();
+    post({ type: 'audio', enabled: false });
+    updateSoundButton();
+  }
+});
+canvas.addEventListener('pointerdown', () => void startSound());
+canvas.addEventListener('keydown', () => void startSound());
+updateSoundButton();
 
 setInterval(() => {
   const kb = stats.bytes / 1000;

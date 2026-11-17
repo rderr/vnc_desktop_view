@@ -7,12 +7,15 @@
 //! PROTOCOL (stdout, little-endian): each message is `u8 kind, u32 len, payload[len]`.
 //!   kind 1 HELLO  payload: u32 width, u32 height, codec string (UTF-8, e.g. "avc1.42E033")
 //!   kind 2 VIDEO  payload: u8 flags (bit 0 = keyframe), u64 timestamp_us, Annex B data
+//!   kind 3 AUDIO  payload: u64 timestamp_us, one Opus packet (48 kHz stereo, 20 ms)
 //! stdin: same framing.
 //!   kind 1 KEYFRAME  (no payload) – send a keyframe next
 //!   kind 2 POINTER   u16 x, u16 y (desktop pixels), u8 buttons (1 left, 2 right, 4 middle),
 //!                    i16 wheel_y, i16 wheel_x (Windows wheel units, 120 = one notch, + = up/right)
 //!   kind 3 KEY       u16 scan code (set 1, 0xE0xx = extended), u8 down
+//!   kind 4 AUDIO     u8 enabled – start/stop sending audio (off until the viewer asks)
 
+mod audio;
 mod capture;
 mod encoder;
 mod input;
@@ -98,8 +101,10 @@ fn stream(capturer: &mut Capturer, encoder: &mut dyn VideoEncoder) -> Result<()>
     // stdin reader: keyframe requests and input. EOF means the extension went away.
     let want_key = Arc::new(AtomicBool::new(false));
     let closed = Arc::new(AtomicBool::new(false));
+    let audio_enabled = Arc::new(AtomicBool::new(false));
+    let start = Instant::now();
     {
-        let (want_key, closed) = (want_key.clone(), closed.clone());
+        let (want_key, closed, audio_enabled) = (want_key.clone(), closed.clone(), audio_enabled.clone());
         let mut input = input::Input::new(capturer.src_width, capturer.src_height);
         std::thread::spawn(move || {
             let mut stdin = std::io::stdin().lock();
@@ -114,6 +119,7 @@ fn stream(capturer: &mut Capturer, encoder: &mut dyn VideoEncoder) -> Result<()>
                     1 => want_key.store(true, Ordering::Relaxed),
                     2 => input.pointer(&payload),
                     3 => input.key(&payload),
+                    4 => audio_enabled.store(payload.first() == Some(&1), Ordering::Relaxed),
                     _ => {}
                 }
             }
@@ -121,12 +127,21 @@ fn stream(capturer: &mut Capturer, encoder: &mut dyn VideoEncoder) -> Result<()>
         });
     }
 
-    let mut out = std::io::stdout().lock();
+    // Each message is written under its own stdout lock, so the audio thread's
+    // messages never land in the middle of a video message.
     let hello_dims = [capturer.width.to_le_bytes(), capturer.height.to_le_bytes()].concat();
-    write_msg(&mut out, 1, &[&hello_dims, encoder.codec().as_bytes()])?;
+    write_msg(&mut std::io::stdout().lock(), 1, &[&hello_dims, encoder.codec().as_bytes()])?;
+
+    {
+        let (audio_enabled, closed) = (audio_enabled.clone(), closed.clone());
+        std::thread::spawn(move || {
+            audio::run(audio_enabled, closed, start, |ts, packet| {
+                write_msg(&mut std::io::stdout().lock(), 3, &[&ts.to_le_bytes(), packet])
+            });
+        });
+    }
 
     let mut bgra = Vec::new();
-    let start = Instant::now();
     let min_interval = Duration::from_secs_f32(1.0 / MAX_FPS as f32);
     let mut last_sent = Instant::now() - min_interval;
     // The viewer needs a first picture even if nothing on screen changes.
@@ -155,7 +170,7 @@ fn stream(capturer: &mut Capturer, encoder: &mut dyn VideoEncoder) -> Result<()>
         if data.is_empty() {
             continue; // encoder skipped the frame (rate control)
         }
-        write_msg(&mut out, 2, &[&[key as u8], &ts.to_le_bytes(), &data])?;
+        write_msg(&mut std::io::stdout().lock(), 2, &[&[key as u8], &ts.to_le_bytes(), &data])?;
     }
     Ok(())
 }
