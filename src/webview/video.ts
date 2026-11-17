@@ -1,7 +1,7 @@
 // Video-preview viewer: decodes the custom server's H.264 with WebCodecs and
 // draws it on a canvas. Runs in the editor tab, on the user's own machine.
 
-import type { VideoToExtension, VideoToWebview } from '../videoProtocol';
+import type { CommandKey, VideoToExtension, VideoToWebview } from '../videoProtocol';
 import { scanCode } from './scancodes';
 import { AudioPlayer } from './audio';
 
@@ -93,6 +93,9 @@ window.addEventListener('message', (event: MessageEvent<VideoToWebview>) => {
     case 'status':
       setStatus(msg.text);
       break;
+    case 'config':
+      applyConfig(msg.commandKey);
+      break;
   }
 });
 
@@ -141,8 +144,35 @@ canvas.addEventListener('wheel', (e) => {
 }, { passive: false });
 
 const pressed = new Set<number>();
+// What ⌘ sends on a Mac viewer (setting vncDesktopView.commandKey, toggled from the toolbar).
+const isMac = /Mac/.test(navigator.platform || navigator.userAgent);
+let commandKey: CommandKey = 'ctrl';
+const cmdKeyBtn = $<HTMLButtonElement>('cmdkey');
+cmdKeyBtn.hidden = !isMac;
+cmdKeyBtn.addEventListener('click', () => {
+  post({ type: 'setCommandKey', value: commandKey === 'ctrl' ? 'windows' : 'ctrl' });
+  canvas.focus();
+});
+function applyConfig(key: CommandKey): void {
+  commandKey = key;
+  cmdKeyBtn.textContent = key === 'ctrl' ? '⌘ = Ctrl' : '⌘ = Win';
+}
+
+function physicalKey(code: string): string {
+  if (isMac && commandKey === 'ctrl') {
+    if (code === 'MetaLeft') return 'ControlLeft';
+    if (code === 'MetaRight') return 'ControlRight';
+  }
+  return code;
+}
+
 function sendKey(e: KeyboardEvent, down: boolean): void {
-  const scan = scanCode(e.code);
+  // About to paste on the remote: bring its clipboard up to date first. The
+  // extension holds back this keystroke until the sync is done.
+  if (down && e.code === 'KeyV' && (e.ctrlKey || (isMac && e.metaKey && commandKey === 'ctrl'))) {
+    post({ type: 'syncClipboard' });
+  }
+  const scan = scanCode(physicalKey(e.code));
   e.preventDefault();
   e.stopPropagation();
   if (scan === undefined) {
@@ -156,6 +186,8 @@ function sendKey(e: KeyboardEvent, down: boolean): void {
 canvas.addEventListener('keydown', (e) => sendKey(e, true));
 canvas.addEventListener('keyup', (e) => sendKey(e, false));
 // Losing focus mid-press would leave keys stuck down on the remote.
+// Coming (back) to the desktop, e.g. after copying something on this machine.
+canvas.addEventListener('focus', () => post({ type: 'syncClipboard' }));
 canvas.addEventListener('blur', () => {
   for (const scan of pressed) post({ type: 'key', scan, down: false });
   pressed.clear();

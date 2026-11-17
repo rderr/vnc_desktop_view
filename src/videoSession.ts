@@ -2,14 +2,17 @@ import * as vscode from 'vscode';
 import * as crypto from 'crypto';
 import * as fs from 'fs';
 import { spawn, type ChildProcessWithoutNullStreams } from 'child_process';
-import type { VideoToExtension, VideoToWebview } from './videoProtocol';
+import type { CommandKey, VideoToExtension, VideoToWebview } from './videoProtocol';
 
 /** Pause reading the server's output while the viewer has this many bytes not yet decoded. */
 const MAX_UNACKED = 1024 * 1024;
+/** Larger clipboard text is not synced (the server has the same limit). */
+const MAX_CLIPBOARD = 1024 * 1024;
 
 /**
  * Experimental: an editor tab showing the desktop through the custom Rust
- * server (server/), which streams H.264 on stdout. View only for now.
+ * server (server/), which streams H.264 and Opus on stdout and takes input and
+ * clipboard text on stdin.
  */
 export class VideoSession {
   private readonly panel: vscode.WebviewPanel;
@@ -18,6 +21,15 @@ export class VideoSession {
   private sent = 0;
   private acked = 0;
   private paused = false;
+  /** The text both clipboards last agreed on, so a sync only happens when one side changed. */
+  private clipboardText: string | undefined;
+  /**
+   * Keystrokes wait behind a pending clipboard sync (reading the local clipboard
+   * is a round trip to the user's machine), so a paste sees the new text. Mouse
+   * input never waits.
+   */
+  private keyQueue: Promise<void> = Promise.resolve();
+  private readonly disposables: vscode.Disposable[] = [];
 
   constructor(
     context: vscode.ExtensionContext,
@@ -30,7 +42,30 @@ export class VideoSession {
       vscode.ViewColumn.Active, { enableScripts: true, retainContextWhenHidden: true, localResourceRoots: [distUri] });
     this.panel.webview.html = this.html(distUri);
     this.panel.webview.onDidReceiveMessage((m: VideoToExtension) => this.onMessage(m));
-    this.panel.onDidDispose(() => this.stop());
+    this.panel.onDidDispose(() => {
+      this.stop();
+      this.disposables.forEach((d) => d.dispose());
+    });
+    this.disposables.push(vscode.workspace.onDidChangeConfiguration((e) => {
+      if (e.affectsConfiguration('vncDesktopView.commandKey')) this.postConfig();
+    }));
+  }
+
+  private postConfig(): void {
+    const commandKey = vscode.workspace.getConfiguration('vncDesktopView').get<CommandKey>('commandKey', 'ctrl');
+    void this.post({ type: 'config', commandKey });
+  }
+
+  /** Local clipboard -> remote, if it changed since the clipboards last agreed. */
+  private async syncClipboard(): Promise<void> {
+    try {
+      const text = await vscode.env.clipboard.readText();
+      if (!text || text === this.clipboardText || Buffer.byteLength(text) > MAX_CLIPBOARD) return;
+      this.clipboardText = text;
+      this.send(5, Buffer.from(text, 'utf8'));
+    } catch (e) {
+      this.log(`video preview: reading the clipboard failed: ${(e as Error).message}`);
+    }
   }
 
   private post(msg: VideoToWebview): Thenable<boolean> {
@@ -40,6 +75,7 @@ export class VideoSession {
   private onMessage(msg: VideoToExtension): void {
     switch (msg.type) {
       case 'ready':
+        this.postConfig();
         this.start();
         break;
       case 'ack':
@@ -66,11 +102,18 @@ export class VideoSession {
         const p = Buffer.alloc(3);
         p.writeUInt16LE(msg.scan, 0);
         p.writeUInt8(msg.down ? 1 : 0, 2);
-        this.send(3, p);
+        this.keyQueue = this.keyQueue.then(() => this.send(3, p));
         break;
       }
       case 'audio':
         this.send(4, Buffer.from([msg.enabled ? 1 : 0]));
+        break;
+      case 'syncClipboard':
+        this.keyQueue = this.keyQueue.then(() => this.syncClipboard());
+        break;
+      case 'setCommandKey':
+        void vscode.workspace.getConfiguration('vncDesktopView')
+          .update('commandKey', msg.value, vscode.ConfigurationTarget.Global);
         break;
       case 'log':
         this.log(msg.text);
@@ -137,6 +180,12 @@ export class VideoSession {
         // Audio is small (~16 KB/s) and not counted against the video flow-control window.
         const timestamp = Number(payload.readBigUInt64LE(0));
         void this.post({ type: 'audio', timestamp, data: new Uint8Array(payload.subarray(8)) });
+      } else if (kind === 4) {
+        // The remote clipboard changed: put it on the local one.
+        const text = payload.toString('utf8');
+        this.clipboardText = text;
+        void vscode.env.clipboard.writeText(text);
+        vscode.window.setStatusBarMessage('$(clippy) Copied from remote desktop', 2000);
       }
     }
     if (!this.paused && this.sent - this.acked > MAX_UNACKED) {
@@ -188,6 +237,7 @@ export class VideoSession {
     <button id="fit" aria-pressed="true">Fit</button>
     <button id="restart">Restart</button>
     <button id="sound" aria-pressed="false" title="Play the remote machine's sound here">Sound off</button>
+    <button id="cmdkey" hidden title="What the ⌘ key sends to the remote desktop (setting: vncDesktopView.commandKey)">⌘ = Ctrl</button>
     <span id="badge" title="Experimental custom server (H.264 over VS Code's connection).">Video preview</span>
     <span id="status">Starting…</span>
     <span id="stats"></span>

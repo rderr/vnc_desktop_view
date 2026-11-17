@@ -8,15 +8,18 @@
 //!   kind 1 HELLO  payload: u32 width, u32 height, codec string (UTF-8, e.g. "avc1.42E033")
 //!   kind 2 VIDEO  payload: u8 flags (bit 0 = keyframe), u64 timestamp_us, Annex B data
 //!   kind 3 AUDIO  payload: u64 timestamp_us, one Opus packet (48 kHz stereo, 20 ms)
+//!   kind 4 CLIPBOARD payload: UTF-8 text (the remote clipboard changed)
 //! stdin: same framing.
 //!   kind 1 KEYFRAME  (no payload) – send a keyframe next
 //!   kind 2 POINTER   u16 x, u16 y (desktop pixels), u8 buttons (1 left, 2 right, 4 middle),
 //!                    i16 wheel_y, i16 wheel_x (Windows wheel units, 120 = one notch, + = up/right)
 //!   kind 3 KEY       u16 scan code (set 1, 0xE0xx = extended), u8 down
 //!   kind 4 AUDIO     u8 enabled – start/stop sending audio (off until the viewer asks)
+//!   kind 5 CLIPBOARD UTF-8 text – put it on the remote clipboard
 
 mod audio;
 mod capture;
+mod clipboard;
 mod encoder;
 mod input;
 mod mf;
@@ -98,10 +101,11 @@ fn write_msg(out: &mut impl Write, kind: u8, parts: &[&[u8]]) -> std::io::Result
 }
 
 fn stream(capturer: &mut Capturer, encoder: &mut dyn VideoEncoder) -> Result<()> {
-    // stdin reader: keyframe requests and input. EOF means the extension went away.
+    // stdin reader: keyframe requests, input, audio on/off, clipboard. EOF means the extension went away.
     let want_key = Arc::new(AtomicBool::new(false));
     let closed = Arc::new(AtomicBool::new(false));
     let audio_enabled = Arc::new(AtomicBool::new(false));
+    let (clip_tx, clip_rx) = std::sync::mpsc::channel::<String>();
     let start = Instant::now();
     {
         let (want_key, closed, audio_enabled) = (want_key.clone(), closed.clone(), audio_enabled.clone());
@@ -120,6 +124,11 @@ fn stream(capturer: &mut Capturer, encoder: &mut dyn VideoEncoder) -> Result<()>
                     2 => input.pointer(&payload),
                     3 => input.key(&payload),
                     4 => audio_enabled.store(payload.first() == Some(&1), Ordering::Relaxed),
+                    5 => {
+                        if payload.len() <= clipboard::MAX_TEXT {
+                            let _ = clip_tx.send(String::from_utf8_lossy(&payload).into_owned());
+                        }
+                    }
                     _ => {}
                 }
             }
@@ -138,6 +147,12 @@ fn stream(capturer: &mut Capturer, encoder: &mut dyn VideoEncoder) -> Result<()>
             audio::run(audio_enabled, closed, start, |ts, packet| {
                 write_msg(&mut std::io::stdout().lock(), 3, &[&ts.to_le_bytes(), packet])
             });
+        });
+    }
+    {
+        let closed = closed.clone();
+        std::thread::spawn(move || {
+            clipboard::run(clip_rx, &closed, |text| write_msg(&mut std::io::stdout().lock(), 4, &[text.as_bytes()]));
         });
     }
 

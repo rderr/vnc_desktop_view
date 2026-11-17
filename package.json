@@ -78,6 +78,19 @@
     "configuration": {
       "title": "VNC Desktop View",
       "properties": {
+        "vncDesktopView.commandKey": {
+          "type": "string",
+          "enum": [
+            "ctrl",
+            "windows"
+          ],
+          "enumDescriptions": [
+            "⌘ acts as Ctrl on the remote, so ⌘C, ⌘V, ⌘Z… work like on the Mac.",
+            "⌘ is sent as the Windows key."
+          ],
+          "default": "ctrl",
+          "markdownDescription": "Video preview, Mac only: what the ⌘ (Command) key sends to the remote desktop."
+        },
         "vncDesktopView.server": {
           "type": "string",
           "enum": [
