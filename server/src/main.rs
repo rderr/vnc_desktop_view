@@ -9,8 +9,12 @@
 //!   kind 2 VIDEO  payload: u8 flags (bit 0 = keyframe), u64 timestamp_us, Annex B data
 //! stdin: same framing.
 //!   kind 1 KEYFRAME  (no payload) – send a keyframe next
+//!   kind 2 POINTER   u16 x, u16 y (desktop pixels), u8 buttons (1 left, 2 right, 4 middle),
+//!                    i16 wheel_y, i16 wheel_x (Windows wheel units, 120 = one notch, + = up/right)
+//!   kind 3 KEY       u16 scan code (set 1, 0xE0xx = extended), u8 down
 
 mod capture;
+mod input;
 
 use anyhow::{Context, Result};
 use capture::{Capturer, Frame};
@@ -122,11 +126,12 @@ fn write_msg(out: &mut impl Write, kind: u8, parts: &[&[u8]]) -> std::io::Result
 }
 
 fn stream(capturer: &mut Capturer, encoder: &mut Encoder) -> Result<()> {
-    // stdin reader: keyframe requests. EOF means the extension went away.
+    // stdin reader: keyframe requests and input. EOF means the extension went away.
     let want_key = Arc::new(AtomicBool::new(false));
     let closed = Arc::new(AtomicBool::new(false));
     {
         let (want_key, closed) = (want_key.clone(), closed.clone());
+        let mut input = input::Input::new(capturer.src_width, capturer.src_height);
         std::thread::spawn(move || {
             let mut stdin = std::io::stdin().lock();
             let mut header = [0u8; 5];
@@ -136,8 +141,11 @@ fn stream(capturer: &mut Capturer, encoder: &mut Encoder) -> Result<()> {
                 if stdin.read_exact(&mut payload).is_err() {
                     break;
                 }
-                if header[0] == 1 {
-                    want_key.store(true, Ordering::Relaxed);
+                match header[0] {
+                    1 => want_key.store(true, Ordering::Relaxed),
+                    2 => input.pointer(&payload),
+                    3 => input.key(&payload),
+                    _ => {}
                 }
             }
             closed.store(true, Ordering::Relaxed);

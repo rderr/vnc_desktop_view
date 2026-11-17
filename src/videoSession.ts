@@ -50,12 +50,39 @@ export class VideoSession {
         }
         break;
       case 'keyframe':
-        this.proc?.stdin.write(Buffer.from([1, 0, 0, 0, 0]));
+        this.send(1, Buffer.alloc(0));
         break;
+      case 'pointer': {
+        const p = Buffer.alloc(9);
+        p.writeUInt16LE(Math.max(0, Math.round(msg.x)), 0);
+        p.writeUInt16LE(Math.max(0, Math.round(msg.y)), 2);
+        p.writeUInt8(msg.buttons & 7, 4);
+        p.writeInt16LE(clamp16(msg.wheelY), 5);
+        p.writeInt16LE(clamp16(msg.wheelX), 7);
+        this.send(2, p);
+        break;
+      }
+      case 'key': {
+        const p = Buffer.alloc(3);
+        p.writeUInt16LE(msg.scan, 0);
+        p.writeUInt8(msg.down ? 1 : 0, 2);
+        this.send(3, p);
+        break;
+      }
       case 'log':
         this.log(msg.text);
         break;
     }
+  }
+
+  /** Writes one message to the server's stdin: u8 kind, u32 LE length, payload. */
+  private send(kind: number, payload: Buffer): void {
+    const proc = this.proc;
+    if (!proc || !proc.stdin.writable) return;
+    const header = Buffer.alloc(5);
+    header[0] = kind;
+    header.writeUInt32LE(payload.length, 1);
+    proc.stdin.write(payload.length ? Buffer.concat([header, payload]) : header);
   }
 
   private start(): void {
@@ -143,7 +170,7 @@ export class VideoSession {
   #badge { padding: 1px 8px; border-radius: 10px; font-size: 0.9em; background: var(--vscode-badge-background); color: var(--vscode-badge-foreground); }
   #stats { margin-left: auto; opacity: 0.75; font-family: var(--vscode-editor-font-family); font-variant-numeric: tabular-nums; }
   #screen { flex: 1; min-height: 0; overflow: auto; display: flex; }
-  canvas { margin: auto; display: block; }
+  canvas { margin: auto; display: block; outline: none; }
   #screen.fit canvas { width: 100%; height: 100%; object-fit: contain; }
 </style>
 </head>
@@ -151,11 +178,11 @@ export class VideoSession {
   <div id="toolbar">
     <button id="fit" aria-pressed="true">Fit</button>
     <button id="restart">Restart</button>
-    <span id="badge" title="Experimental custom server (H.264 over VS Code's connection). View only.">Video preview · view only</span>
+    <span id="badge" title="Experimental custom server (H.264 over VS Code's connection).">Video preview</span>
     <span id="status">Starting…</span>
     <span id="stats"></span>
   </div>
-  <div id="screen" class="fit"><canvas id="canvas"></canvas></div>
+  <div id="screen" class="fit"><canvas id="canvas" tabindex="0"></canvas></div>
   <script nonce="${nonce}" src="${script}"></script>
 </body>
 </html>`;
@@ -169,4 +196,8 @@ export function findServerBinary(extensionPath: string): string | undefined {
     if (fs.existsSync(p)) return p;
   }
   return undefined;
+}
+
+function clamp16(v: number): number {
+  return Math.max(-32768, Math.min(32767, Math.round(v)));
 }
