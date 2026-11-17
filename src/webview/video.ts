@@ -93,6 +93,12 @@ window.addEventListener('message', (event: MessageEvent<VideoToWebview>) => {
     case 'status':
       setStatus(msg.text);
       break;
+    case 'notice': {
+      const el = $('notice');
+      el.textContent = msg.text ?? '';
+      el.hidden = msg.text === null;
+      break;
+    }
     case 'config':
       applyConfig(msg.commandKey);
       break;

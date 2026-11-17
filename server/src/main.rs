@@ -5,10 +5,14 @@
 //!   desktop-server [--encoder ...] --out FILE [--seconds N]       write a raw Annex B .h264 file (testing)
 //!
 //! PROTOCOL (stdout, little-endian): each message is `u8 kind, u32 len, payload[len]`.
-//!   kind 1 HELLO  payload: u32 width, u32 height, codec string (UTF-8, e.g. "avc1.42E033")
+//!   kind 1 HELLO  payload: u32 width, u32 height, codec string (UTF-8, e.g. "avc1.42E033").
+//!                 Sent again whenever capture restarts (e.g. after a resolution change);
+//!                 the viewer resets its decoder, and a keyframe follows.
 //!   kind 2 VIDEO  payload: u8 flags (bit 0 = keyframe), u64 timestamp_us, Annex B data
 //!   kind 3 AUDIO  payload: u64 timestamp_us, one Opus packet (48 kHz stereo, 20 ms)
 //!   kind 4 CLIPBOARD payload: UTF-8 text (the remote clipboard changed)
+//!   kind 5 NOTICE payload: u8 code, UTF-8 detail. 0 = clear, 1 = a secure desktop (lock
+//!                 screen, UAC prompt) is showing and can't be captured, 2 = capture failing (detail)
 //! stdin: same framing.
 //!   kind 1 KEYFRAME  (no payload) – send a keyframe next
 //!   kind 2 POINTER   u16 x, u16 y (desktop pixels), u8 buttons (1 left, 2 right, 4 middle),
@@ -29,15 +33,26 @@ use capture::{Capturer, Frame};
 use encoder::{MAX_FPS, VideoEncoder};
 use std::io::{Read, Write};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().collect();
     let arg = |name: &str| args.iter().position(|a| a == name).and_then(|i| args.get(i + 1)).cloned();
+    let encoder_kind = arg("--encoder").unwrap_or_else(|| "auto".into());
 
-    let mut capturer = Capturer::new()?;
-    let mut encoder = encoder::create(&arg("--encoder").unwrap_or_else(|| "auto".into()), capturer.width, capturer.height)?;
+    if let Some(path) = arg("--out") {
+        let seconds: u64 = arg("--seconds").map(|s| s.parse()).transpose()?.unwrap_or(5);
+        let (mut capturer, mut encoder) = open(&encoder_kind)?;
+        return record(&mut capturer, encoder.as_mut(), &path, Duration::from_secs(seconds));
+    }
+    stream(&encoder_kind)
+}
+
+/// Starts capturing the current desktop with an encoder sized to match.
+fn open(encoder_kind: &str) -> Result<(Capturer, Box<dyn VideoEncoder>)> {
+    let capturer = Capturer::new()?;
+    let encoder = encoder::create(encoder_kind, capturer.width, capturer.height)?;
     eprintln!(
         "desktop-server: capturing {}x{}, encoding {}x{} with {} ({})",
         capturer.src_width,
@@ -47,12 +62,7 @@ fn main() -> Result<()> {
         encoder.name(),
         encoder.codec()
     );
-
-    if let Some(path) = arg("--out") {
-        let seconds: u64 = arg("--seconds").map(|s| s.parse()).transpose()?.unwrap_or(5);
-        return record(&mut capturer, encoder.as_mut(), &path, Duration::from_secs(seconds));
-    }
-    stream(&mut capturer, encoder.as_mut())
+    Ok((capturer, encoder))
 }
 
 fn record(capturer: &mut Capturer, encoder: &mut dyn VideoEncoder, path: &str, duration: Duration) -> Result<()> {
@@ -66,6 +76,7 @@ fn record(capturer: &mut Capturer, encoder: &mut dyn VideoEncoder, path: &str, d
         match capturer.next(if have_image { 100 } else { 1000 }, &mut bgra)? {
             Frame::Changed => have_image = true,
             Frame::Unchanged => continue,
+            Frame::Lost(why) => anyhow::bail!("capture lost: {why}"),
         }
         let t = Instant::now();
         let (data, key) = encoder.encode(&bgra, start.elapsed().as_micros() as u64)?;
@@ -100,16 +111,29 @@ fn write_msg(out: &mut impl Write, kind: u8, parts: &[&[u8]]) -> std::io::Result
     out.flush()
 }
 
-fn stream(capturer: &mut Capturer, encoder: &mut dyn VideoEncoder) -> Result<()> {
-    // stdin reader: keyframe requests, input, audio on/off, clipboard. EOF means the extension went away.
+/// Each message is written under its own stdout lock, so messages from the
+/// audio and clipboard threads never land in the middle of a video message.
+fn send(kind: u8, parts: &[&[u8]]) -> std::io::Result<()> {
+    write_msg(&mut std::io::stdout().lock(), kind, parts)
+}
+
+const NOTICE_CLEAR: u8 = 0;
+const NOTICE_SECURE_DESKTOP: u8 = 1;
+const NOTICE_CAPTURE_FAILING: u8 = 2;
+
+fn stream(encoder_kind: &str) -> Result<()> {
     let want_key = Arc::new(AtomicBool::new(false));
     let closed = Arc::new(AtomicBool::new(false));
     let audio_enabled = Arc::new(AtomicBool::new(false));
+    // Desktop size for input scaling: width << 32 | height. Updated on every (re)start.
+    let desktop_size = Arc::new(AtomicU64::new(0));
     let (clip_tx, clip_rx) = std::sync::mpsc::channel::<String>();
     let start = Instant::now();
+
+    // stdin reader: keyframe requests, input, audio on/off, clipboard. EOF means the extension went away.
     {
         let (want_key, closed, audio_enabled) = (want_key.clone(), closed.clone(), audio_enabled.clone());
-        let mut input = input::Input::new(capturer.src_width, capturer.src_height);
+        let mut input = input::Input::new(desktop_size.clone());
         std::thread::spawn(move || {
             let mut stdin = std::io::stdin().lock();
             let mut header = [0u8; 5];
@@ -135,37 +159,77 @@ fn stream(capturer: &mut Capturer, encoder: &mut dyn VideoEncoder) -> Result<()>
             closed.store(true, Ordering::Relaxed);
         });
     }
-
-    // Each message is written under its own stdout lock, so the audio thread's
-    // messages never land in the middle of a video message.
-    let hello_dims = [capturer.width.to_le_bytes(), capturer.height.to_le_bytes()].concat();
-    write_msg(&mut std::io::stdout().lock(), 1, &[&hello_dims, encoder.codec().as_bytes()])?;
-
     {
         let (audio_enabled, closed) = (audio_enabled.clone(), closed.clone());
         std::thread::spawn(move || {
-            audio::run(audio_enabled, closed, start, |ts, packet| {
-                write_msg(&mut std::io::stdout().lock(), 3, &[&ts.to_le_bytes(), packet])
-            });
+            audio::run(audio_enabled, closed, start, |ts, packet| send(3, &[&ts.to_le_bytes(), packet]));
         });
     }
     {
         let closed = closed.clone();
         std::thread::spawn(move || {
-            clipboard::run(clip_rx, &closed, |text| write_msg(&mut std::io::stdout().lock(), 4, &[text.as_bytes()]));
+            clipboard::run(clip_rx, &closed, |text| send(4, &[text.as_bytes()]));
         });
     }
 
+    let mut session: Option<(Capturer, Box<dyn VideoEncoder>)> = None;
+    // The notice currently shown, so it's sent only when it changes.
+    let mut notice = NOTICE_CLEAR;
     let mut bgra = Vec::new();
     let min_interval = Duration::from_secs_f32(1.0 / MAX_FPS as f32);
     let mut last_sent = Instant::now() - min_interval;
-    // The viewer needs a first picture even if nothing on screen changes.
     let mut have_image = false;
     let mut need_send = true;
+
     while !closed.load(Ordering::Relaxed) {
-        if let Frame::Changed = capturer.next(100, &mut bgra)? {
-            have_image = true;
-            need_send = true;
+        // (Re)start capture: at launch, after a resolution change, after a lock screen…
+        let Some((capturer, encoder)) = session.as_mut() else {
+            match open(encoder_kind) {
+                Ok((capturer, encoder)) => {
+                    desktop_size.store(((capturer.src_width as u64) << 32) | capturer.src_height as u64, Ordering::Relaxed);
+                    let dims = [capturer.width.to_le_bytes(), capturer.height.to_le_bytes()].concat();
+                    send(1, &[&dims, encoder.codec().as_bytes()])?;
+                    if notice != NOTICE_CLEAR {
+                        send(5, &[&[NOTICE_CLEAR]])?;
+                        notice = NOTICE_CLEAR;
+                    }
+                    session = Some((capturer, encoder));
+                    // A new duplication delivers the current screen as its first frame.
+                    have_image = false;
+                    need_send = true;
+                }
+                Err(e) => {
+                    let code = if capture::is_secure_desktop(&e) { NOTICE_SECURE_DESKTOP } else { NOTICE_CAPTURE_FAILING };
+                    if code != notice {
+                        eprintln!("desktop-server: capture unavailable ({e:#}); retrying");
+                        send(5, &[&[code], format!("{e:#}").as_bytes()])?;
+                        notice = code;
+                    }
+                    std::thread::sleep(Duration::from_millis(500));
+                }
+            }
+            continue;
+        };
+
+        match capturer.next(100, &mut bgra) {
+            Ok(Frame::Changed) => {
+                have_image = true;
+                need_send = true;
+            }
+            Ok(Frame::Unchanged) => {}
+            Ok(Frame::Lost(why)) => {
+                eprintln!("desktop-server: capture lost ({why}); restarting capture");
+                // A resolution change is announced more than once while the display
+                // settles; give it a moment so capture restarts once, not twice.
+                std::thread::sleep(Duration::from_millis(300));
+                session = None;
+                continue;
+            }
+            Err(e) => {
+                eprintln!("desktop-server: capture failed ({e:#}); restarting capture");
+                session = None;
+                continue;
+            }
         }
         if want_key.swap(false, Ordering::Relaxed) {
             encoder.force_keyframe();
@@ -179,13 +243,21 @@ fn stream(capturer: &mut Capturer, encoder: &mut dyn VideoEncoder) -> Result<()>
             std::thread::sleep(min_interval - since);
         }
         let ts = start.elapsed().as_micros() as u64;
-        let (data, key) = encoder.encode(&bgra, ts)?;
+        let (data, key) = match encoder.encode(&bgra, ts) {
+            Ok(r) => r,
+            Err(e) => {
+                // e.g. the GPU was reset; start over with a fresh capturer and encoder.
+                eprintln!("desktop-server: encoding failed ({e:#}); restarting capture");
+                session = None;
+                continue;
+            }
+        };
         last_sent = Instant::now();
         need_send = false;
         if data.is_empty() {
             continue; // encoder skipped the frame (rate control)
         }
-        write_msg(&mut std::io::stdout().lock(), 2, &[&[key as u8], &ts.to_le_bytes(), &data])?;
+        send(2, &[&[key as u8], &ts.to_le_bytes(), &data])?;
     }
     Ok(())
 }

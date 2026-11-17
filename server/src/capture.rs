@@ -4,7 +4,7 @@
 //! idle desktop costs (almost) nothing. Frames are copied into a CPU-readable
 //! staging texture and returned as tightly packed BGRA.
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result};
 use windows::Win32::Foundation::HMODULE;
 use windows::Win32::Graphics::Direct3D::D3D_DRIVER_TYPE_HARDWARE;
 use windows::Win32::Graphics::Direct3D11::*;
@@ -29,6 +29,9 @@ pub struct Capturer {
 pub enum Frame {
     /// The screen changed; `buf` holds tightly packed BGRA, `width * height * 4` bytes.
     Changed,
+    /// Capture stopped working (resolution change, lock screen, UAC prompt…);
+    /// create a new Capturer.
+    Lost(String),
     /// Nothing changed on screen within the timeout.
     Unchanged,
 }
@@ -100,8 +103,9 @@ impl Capturer {
                 if e.code() == DXGI_ERROR_WAIT_TIMEOUT {
                     return Ok(Frame::Unchanged);
                 }
-                // DXGI_ERROR_ACCESS_LOST: mode change, desktop switch (UAC, lock screen)…
-                bail!("AcquireNextFrame: {e}");
+                // DXGI_ERROR_ACCESS_LOST: resolution change, or a switch to a secure
+                // desktop (lock screen, UAC prompt). The caller re-creates the capturer.
+                return Ok(Frame::Lost(e.to_string()));
             }
             // Only the mouse pointer moved: the image is unchanged.
             if info.LastPresentTime == 0 {
@@ -126,4 +130,12 @@ impl Capturer {
             Ok(Frame::Changed)
         }
     }
+}
+
+/// Whether a `Capturer::new` error means a secure desktop (lock screen, UAC
+/// prompt, Ctrl+Alt+Del screen) is showing, which a program running as the
+/// user isn't allowed to capture.
+pub fn is_secure_desktop(err: &anyhow::Error) -> bool {
+    err.downcast_ref::<windows::core::Error>()
+        .is_some_and(|e| e.code() == windows::Win32::Foundation::E_ACCESSDENIED)
 }

@@ -19,7 +19,8 @@ export type VideoToWebview =
   | { type: 'video'; key: boolean; timestamp: number; data: Uint8Array }
   | { type: 'audio'; timestamp: number; data: Uint8Array } // one Opus packet, 48 kHz stereo
   | { type: 'status'; text: string }
-  | { type: 'config'; commandKey: CommandKey };
+  | { type: 'config'; commandKey: CommandKey }
+  | { type: 'notice'; text: string | null };  // banner over the desktop (null hides it)
 
 /** What the Mac ⌘ key sends to the remote: Ctrl (so ⌘C/⌘V copy and paste) or the Windows key. */
 export type CommandKey = 'ctrl' | 'windows';

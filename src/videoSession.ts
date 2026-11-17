@@ -8,6 +8,8 @@ import type { CommandKey, VideoToExtension, VideoToWebview } from './videoProtoc
 const MAX_UNACKED = 1024 * 1024;
 /** Larger clipboard text is not synced (the server has the same limit). */
 const MAX_CLIPBOARD = 1024 * 1024;
+/** Restart a server that exits unexpectedly at most this many times a minute. */
+const MAX_AUTO_RESTARTS = 3;
 
 /**
  * Experimental: an editor tab showing the desktop through the custom Rust
@@ -30,11 +32,14 @@ export class VideoSession {
    */
   private keyQueue: Promise<void> = Promise.resolve();
   private readonly disposables: vscode.Disposable[] = [];
+  /** Times of recent unexpected server exits, to stop auto-restarting a server that keeps crashing. */
+  private crashes: number[] = [];
+  private restartTimer: NodeJS.Timeout | undefined;
 
   constructor(
     context: vscode.ExtensionContext,
     private readonly binary: string,
-    label: string,
+    private readonly label: string,
     private readonly log: (msg: string) => void,
   ) {
     const distUri = vscode.Uri.joinPath(context.extensionUri, 'dist');
@@ -75,6 +80,7 @@ export class VideoSession {
   private onMessage(msg: VideoToExtension): void {
     switch (msg.type) {
       case 'ready':
+        this.crashes = []; // a manual (re)start gets a fresh set of automatic retries
         this.postConfig();
         this.start();
         break;
@@ -132,12 +138,14 @@ export class VideoSession {
   }
 
   private start(): void {
+    clearTimeout(this.restartTimer);
     this.stop();
     this.buffered = Buffer.alloc(0);
     this.sent = this.acked = 0;
     this.paused = false;
     this.log(`video preview: starting ${this.binary}`);
     void this.post({ type: 'status', text: 'Starting server…' });
+    void this.post({ type: 'notice', text: null });
     const proc = spawn(this.binary, [], { windowsHide: true });
     this.proc = proc;
     proc.stdout.on('data', (chunk: Buffer) => { if (this.proc === proc) this.onData(chunk); });
@@ -147,9 +155,17 @@ export class VideoSession {
     proc.on('error', (e) => this.log(`video preview: ${e.message}`));
     proc.on('exit', (code) => {
       this.log(`video preview: server exited (${code})`);
-      if (this.proc === proc) {
-        this.proc = undefined;
-        void this.post({ type: 'status', text: `Server stopped (exit code ${code}). Click Restart.` });
+      if (this.proc !== proc) return; // we stopped it on purpose
+      this.proc = undefined;
+      // Unexpected exit: restart automatically, unless it keeps happening.
+      const now = Date.now();
+      this.crashes = this.crashes.filter((t) => now - t < 60_000);
+      this.crashes.push(now);
+      if (this.crashes.length <= MAX_AUTO_RESTARTS) {
+        void this.post({ type: 'status', text: 'Server stopped unexpectedly; restarting…' });
+        this.restartTimer = setTimeout(() => this.start(), 1000);
+      } else {
+        void this.post({ type: 'status', text: `Server keeps stopping (exit code ${code}). Click Restart to try again.` });
       }
     });
     proc.stdin.on('error', () => undefined); // server gone; 'exit' reports it
@@ -176,6 +192,12 @@ export class VideoSession {
         const data = new Uint8Array(payload.subarray(9));
         this.sent += data.byteLength;
         void this.post({ type: 'video', key, timestamp, data });
+      } else if (kind === 5) {
+        // Capture can't run right now (secure desktop, or failing); the server keeps retrying.
+        const code = payload[0];
+        const detail = payload.subarray(1).toString('utf8');
+        if (code !== 0) this.log(`video preview: capture unavailable (${code}): ${detail}`);
+        void this.post({ type: 'notice', text: noticeText(code, this.label, detail) });
       } else if (kind === 3) {
         // Audio is small (~16 KB/s) and not counted against the video flow-control window.
         const timestamp = Number(payload.readBigUInt64LE(0));
@@ -195,6 +217,7 @@ export class VideoSession {
   }
 
   private stop(): void {
+    clearTimeout(this.restartTimer);
     const proc = this.proc;
     this.proc = undefined;
     if (proc) {
@@ -227,6 +250,9 @@ export class VideoSession {
   button[aria-pressed="true"] { background: var(--vscode-button-background); color: var(--vscode-button-foreground); }
   #badge { padding: 1px 8px; border-radius: 10px; font-size: 0.9em; background: var(--vscode-badge-background); color: var(--vscode-badge-foreground); }
   #stats { margin-left: auto; opacity: 0.75; font-family: var(--vscode-editor-font-family); font-variant-numeric: tabular-nums; }
+  #notice { padding: 6px 10px; flex: none; background: var(--vscode-inputValidation-warningBackground, #5a4a00);
+            border-bottom: 1px solid var(--vscode-inputValidation-warningBorder, #b89500); }
+  #notice[hidden] { display: none; }
   #screen { flex: 1; min-height: 0; overflow: auto; display: flex; }
   canvas { margin: auto; display: block; outline: none; }
   #screen.fit canvas { width: 100%; height: 100%; object-fit: contain; }
@@ -242,6 +268,7 @@ export class VideoSession {
     <span id="status">Starting…</span>
     <span id="stats"></span>
   </div>
+  <div id="notice" role="status" hidden></div>
   <div id="screen" class="fit"><canvas id="canvas" tabindex="0"></canvas></div>
   <script nonce="${nonce}" src="${script}"></script>
 </body>
@@ -260,4 +287,18 @@ export function findServerBinary(extensionPath: string): string | undefined {
 
 function clamp16(v: number): number {
   return Math.max(-32768, Math.min(32767, Math.round(v)));
+}
+
+/** Banner text for a server NOTICE (null hides the banner). */
+function noticeText(code: number, label: string, detail: string): string | null {
+  switch (code) {
+    case 0:
+      return null;
+    case 1:
+      return `${label} is showing the lock screen, a UAC prompt or another secure screen, which the video preview ` +
+        `can't show or control. The picture comes back by itself when the desktop returns ` +
+        `(to unlock remotely, use the full-access VNC tab: "Open Desktop").`;
+    default:
+      return `Can't capture the screen of ${label} right now; retrying… (${detail})`;
+  }
 }

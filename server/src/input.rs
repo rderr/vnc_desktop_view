@@ -1,18 +1,20 @@
 //! Replays the viewer's mouse and keyboard on Windows with SendInput.
 
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use windows::Win32::UI::Input::KeyboardAndMouse::*;
 
 pub struct Input {
-    /// Desktop size, to turn pixel positions into SendInput's 0..65535 range.
-    width: u32,
-    height: u32,
+    /// Desktop size (width << 32 | height), to turn pixel positions into SendInput's
+    /// 0..65535 range. Shared with the capture loop, which updates it when the resolution changes.
+    size: Arc<AtomicU64>,
     /// Browser `buttons` mask last sent (1 = left, 2 = right, 4 = middle).
     buttons: u8,
 }
 
 impl Input {
-    pub fn new(width: u32, height: u32) -> Self {
-        Self { width, height, buttons: 0 }
+    pub fn new(size: Arc<AtomicU64>) -> Self {
+        Self { size, buttons: 0 }
     }
 
     /// Payload: u16 x, u16 y, u8 buttons, i16 wheel_y, i16 wheel_x (Windows wheel units, + = up/right).
@@ -23,11 +25,16 @@ impl Input {
         let x = u16::from_le_bytes([p[0], p[1]]) as i32;
         let y = u16::from_le_bytes([p[2], p[3]]) as i32;
         let buttons = p[4];
+        let size = self.size.load(Ordering::Relaxed);
+        let (width, height) = ((size >> 32) as u32, size as u32);
+        if width == 0 || height == 0 {
+            return; // not capturing yet (e.g. the screen is locked)
+        }
         let wheel_y = i16::from_le_bytes([p[5], p[6]]) as i32;
         let wheel_x = i16::from_le_bytes([p[7], p[8]]) as i32;
 
         let norm = |v: i32, size: u32| (v.clamp(0, size as i32 - 1) * 65535) / (size as i32 - 1).max(1);
-        let mut events = vec![mouse(norm(x, self.width), norm(y, self.height), 0, MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE)];
+        let mut events = vec![mouse(norm(x, width), norm(y, height), 0, MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE)];
         for (bit, down, up) in [
             (1u8, MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP),
             (2, MOUSEEVENTF_RIGHTDOWN, MOUSEEVENTF_RIGHTUP),
