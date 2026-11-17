@@ -26,9 +26,9 @@ pub struct Capturer {
     pub height: u32,
 }
 
-pub enum Frame<'a> {
-    /// Tightly packed BGRA, `width * height * 4` bytes.
-    Image(&'a [u8]),
+pub enum Frame {
+    /// The screen changed; `buf` holds tightly packed BGRA, `width * height * 4` bytes.
+    Changed,
     /// Nothing changed on screen within the timeout.
     Unchanged,
 }
@@ -92,7 +92,7 @@ impl Capturer {
 
     /// Waits up to `timeout_ms` for the screen to change. On a change, copies
     /// the desktop into `buf` (resized as needed) and returns it.
-    pub fn next<'a>(&mut self, timeout_ms: u32, buf: &'a mut Vec<u8>) -> Result<Frame<'a>> {
+    pub fn next(&mut self, timeout_ms: u32, buf: &mut Vec<u8>) -> Result<Frame> {
         unsafe {
             let mut info = DXGI_OUTDUPL_FRAME_INFO::default();
             let mut resource: Option<IDXGIResource> = None;
@@ -123,7 +123,7 @@ impl Capturer {
             }
             self.context.Unmap(&self.staging, 0);
             let _ = &self.device; // keep the device alive alongside the duplication
-            Ok(Frame::Image(buf))
+            Ok(Frame::Changed)
         }
     }
 }
