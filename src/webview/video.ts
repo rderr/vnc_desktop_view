@@ -102,7 +102,7 @@ window.addEventListener('message', (event: MessageEvent<VideoToWebview>) => {
       break;
     }
     case 'config':
-      applyConfig(msg.commandKey);
+      applyConfig(msg.commandKey, msg.remoteMac);
       break;
   }
 });
@@ -153,21 +153,25 @@ canvas.addEventListener('wheel', (e) => {
 
 const pressed = new Set<number>();
 // What ⌘ sends on a Mac viewer (setting vncDesktopView.commandKey, toggled from the toolbar).
+// A Mac remote gets ⌘ as ⌘.
 const isMac = /Mac/.test(navigator.platform || navigator.userAgent);
 let commandKey: CommandKey = 'ctrl';
+let remoteMac = false;
 const cmdKeyBtn = $<HTMLButtonElement>('cmdkey');
 cmdKeyBtn.hidden = !isMac;
 cmdKeyBtn.addEventListener('click', () => {
   post({ type: 'setCommandKey', value: commandKey === 'ctrl' ? 'windows' : 'ctrl' });
   canvas.focus();
 });
-function applyConfig(key: CommandKey): void {
+function applyConfig(key: CommandKey, mac: boolean): void {
   commandKey = key;
+  remoteMac = mac;
+  cmdKeyBtn.hidden = !isMac || remoteMac;
   cmdKeyBtn.textContent = key === 'ctrl' ? '⌘ = Ctrl' : '⌘ = Win';
 }
 
 function physicalKey(code: string): string {
-  if (isMac && commandKey === 'ctrl') {
+  if (isMac && commandKey === 'ctrl' && !remoteMac) {
     if (code === 'MetaLeft') return 'ControlLeft';
     if (code === 'MetaRight') return 'ControlRight';
   }
@@ -177,7 +181,8 @@ function physicalKey(code: string): string {
 function sendKey(e: KeyboardEvent, down: boolean): void {
   // About to paste on the remote: bring its clipboard up to date first. The
   // extension holds back this keystroke until the sync is done.
-  if (down && e.code === 'KeyV' && (e.ctrlKey || (isMac && e.metaKey && commandKey === 'ctrl'))) {
+  const pasteModifier = remoteMac ? e.metaKey : e.ctrlKey || (isMac && e.metaKey && commandKey === 'ctrl');
+  if (down && e.code === 'KeyV' && pasteModifier) {
     post({ type: 'syncClipboard' });
   }
   const scan = scanCode(physicalKey(e.code));

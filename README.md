@@ -1,10 +1,10 @@
 # Remote Desktop View
 
-A Visual Studio Code extension that shows your remote Windows or Linux machine's desktop in an editor tab — with sound and a shared clipboard — and lets you control it, over the connection VS Code already has (Remote Tunnels, Remote-SSH or WSL).
+A Visual Studio Code extension that shows your remote Windows, Linux or Mac desktop in an editor tab — with sound and a shared clipboard — and lets you control it, over the connection VS Code already has (Remote Tunnels, Remote-SSH or WSL).
 
 No ports to open, no VPN, nothing to install on your own machine, no setup on the remote.
 
-> **Preview.** Windows 10/11 remotes are supported, and Linux remotes running X11 with an NVIDIA GPU, or (experimental) an Intel or AMD GPU (see [Requirements](#requirements)). macOS remotes are planned.
+> **Preview.** Windows 10/11 remotes are supported, and Linux remotes running X11 with an NVIDIA GPU, or (experimental) an Intel or AMD GPU (see [Requirements](#requirements)). macOS remotes show the desktop and take mouse and keyboard input; sound and clipboard sync on macOS are in progress.
 
 ![Remote Desktop View screenshot](resources/remotedesktop.png)
 
@@ -23,6 +23,7 @@ The screen travels through VS Code's own connection to the remote, so whatever a
 The remote desktop is streamed as H.264 video, encoded by the remote machine's GPU and decoded by VS Code on your machine. It only sends frames when something changes, and uses a fraction of the bandwidth of VNC: a few hundred KB/s for everyday use at up to 60 fps.
 
 - **Windows:** the GPU's encoder (Intel Quick Sync, NVIDIA NVENC, AMD — whatever Windows provides), fed straight from video memory. Machines without a hardware encoder use the H.264 encoder built into Windows.
+- **macOS:** VideoToolbox, the Mac's hardware encoder, fed straight from the screen capture's GPU buffers.
 - **Linux:** NVIDIA's NVENC, or VA-API on Intel and AMD GPUs (experimental), at up to 4K. Machines without either can use the OpenH264 software encoder, which the extension offers to download from Cisco.
 
 ### Sound
@@ -35,7 +36,7 @@ Text copied on the remote desktop lands on your clipboard, and your clipboard is
 
 ### Mac Keyboards
 
-On a Mac, ⌘ acts as Ctrl on the remote by default, so ⌘C, ⌘V and ⌘Z do what you expect. Switch it to the Windows key with the **⌘ = Ctrl** button or the `vncDesktopView.commandKey` setting.
+On a Mac, ⌘ acts as Ctrl on a Windows or Linux remote by default, so ⌘C, ⌘V and ⌘Z do what you expect. Switch it to the Windows key with the **⌘ = Ctrl** button or the `vncDesktopView.commandKey` setting. On a Mac remote, ⌘ is simply ⌘.
 
 ### Recovers by Itself
 
@@ -68,6 +69,17 @@ On a Linux machine without a usable GPU encoder (for example a virtual machine),
 
 *OpenH264 Video Codec provided by Cisco Systems, Inc.*
 
+### macOS
+
+- macOS 12.3 or later (Apple Silicon or Intel)
+- Two permissions, granted once in **System Settings → Privacy & Security** on the Mac:
+  - **Screen & System Audio Recording**, to see the screen
+  - **Accessibility**, to control it
+
+  Which program needs them depends on how VS Code connects. With **Remote Tunnels**, macOS asks for VS Code's `code` command when the desktop is first opened. With **Remote-SSH**, add `/usr/libexec/sshd-keygen-wrapper` to both lists yourself (click **+**, press **⌘⇧G** and type the path). Someone has to be at the Mac to do this.
+- macOS 15 may now and then ask on the Mac's screen whether to keep allowing screen recording.
+- Large screens are scaled down to fit H.264 at 60 fps (e.g. a 3840×2486 Retina mode is sent as 3670×2376); a 4K display is sent as is.
+
 ## Getting Started
 
 1. Connect VS Code to the remote machine and install the extension there (VS Code offers to install it on the remote side)
@@ -96,6 +108,7 @@ On a Linux machine without a usable GPU encoder (for example a virtual machine),
 - **Linux: Wayland and screens over 4096 pixels** aren't supported yet (see [Requirements](#linux))
 - **Linux: Intel / AMD GPUs (VA-API)** are experimental and haven't been tested on real hardware yet. If the tab shows an encoder error, please [report it](https://github.com/rderr/vnc_desktop_view/issues) with the **Remote Desktop View** output
 - **Keyboard shortcuts** that VS Code handles itself (such as ⌘W / Ctrl+W) don't reach the remote
+- **Viewing the computer you're using:** in a plain local VS Code window the tab is view-only, because mouse and keyboard input would land back in the tab and repeat endlessly. Over Remote-SSH to your own machine the extension can't tell, so don't type or click in that tab.
 - **After a reboot**, the remote is only reachable once someone has logged in (VS Code's tunnel starts at login)
 
 ## Development
@@ -154,6 +167,10 @@ server/src/                   # Desktop server (Rust)
 │   ├── audio.rs              # WASAPI loopback -> Opus
 │   ├── input.rs              # Mouse and keyboard (SendInput)
 │   └── clipboard.rs          # Clipboard sync
+├── mac/                      # macOS
+│   ├── capture.rs            # ScreenCaptureKit
+│   ├── vt.rs                 # VideoToolbox H.264
+│   └── input.rs              # Mouse and keyboard (Core Graphics events)
 └── linux/                    # Linux (X11)
     ├── display.rs            # Finds the logged-in desktop session
     ├── capture.rs            # MIT-SHM screen grabs, driven by DAMAGE

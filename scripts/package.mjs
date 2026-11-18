@@ -4,6 +4,7 @@
 //   On Windows:  vnc-desktop-view-<version>-win32-x64.vsix   includes bin/desktop-server.exe
 //                vnc-desktop-view-<version>.vsix             every other platform (says it isn't supported yet)
 //   On Linux:    vnc-desktop-view-<version>-linux-x64.vsix   includes bin/desktop-server
+//   On macOS:    vnc-desktop-view-<version>-darwin-arm64.vsix (or -darwin-x64 on Intel Macs)
 //
 // Needs Rust. On Windows also the Visual Studio C++ build tools (they include
 // CMake, which libopus needs); on Linux a C compiler and CMake.
@@ -40,8 +41,8 @@ function cmakeDir() {
   return path.dirname(found);
 }
 
-if (target !== 'win32-x64' && target !== 'linux-x64') {
-  console.error(`No desktop server for ${target} yet: run this on Windows or Linux (x64).`);
+if (!['win32-x64', 'linux-x64', 'darwin-arm64', 'darwin-x64'].includes(target)) {
+  console.error(`No desktop server for ${target} yet: run this on Windows or Linux (x64), or macOS.`);
   process.exit(1);
 }
 

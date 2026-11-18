@@ -47,6 +47,11 @@ export class VideoSession {
     private readonly binary: string,
     private readonly label: string,
     private readonly log: (msg: string) => void,
+    /**
+     * The desktop is the one VS Code itself is shown on (a local window): mouse and
+     * keyboard input would land back in this tab and repeat endlessly, so none is sent.
+     */
+    private readonly viewOnly = false,
   ) {
     this.storageDir = context.globalStorageUri.fsPath;
     const distUri = vscode.Uri.joinPath(context.extensionUri, 'dist');
@@ -70,7 +75,7 @@ export class VideoSession {
 
   private postConfig(): void {
     const commandKey = vscode.workspace.getConfiguration('vncDesktopView').get<CommandKey>('commandKey', 'ctrl');
-    void this.post({ type: 'config', commandKey });
+    void this.post({ type: 'config', commandKey, remoteMac: process.platform === 'darwin' });
   }
 
   /** Local clipboard -> remote, if it changed since the clipboards last agreed. */
@@ -108,6 +113,7 @@ export class VideoSession {
         this.send(1, Buffer.alloc(0));
         break;
       case 'pointer': {
+        if (this.viewOnly) break;
         const p = Buffer.alloc(9);
         p.writeUInt16LE(Math.max(0, Math.round(msg.x)), 0);
         p.writeUInt16LE(Math.max(0, Math.round(msg.y)), 2);
@@ -118,6 +124,7 @@ export class VideoSession {
         break;
       }
       case 'key': {
+        if (this.viewOnly) break;
         const p = Buffer.alloc(3);
         p.writeUInt16LE(msg.scan, 0);
         p.writeUInt8(msg.down ? 1 : 0, 2);
@@ -128,6 +135,7 @@ export class VideoSession {
         this.send(4, Buffer.from([msg.enabled ? 1 : 0]));
         break;
       case 'syncClipboard':
+        if (this.viewOnly) break;
         this.keyQueue = this.keyQueue.then(() => this.syncClipboard());
         break;
       case 'setCommandKey':
@@ -158,7 +166,13 @@ export class VideoSession {
     this.paused = false;
     this.log(`desktop: starting ${this.binary}`);
     void this.post({ type: 'status', text: 'Starting server…' });
-    void this.post({ type: 'notice', text: null });
+    void this.post({
+      type: 'notice',
+      text: this.viewOnly
+        ? 'View only: this tab shows the screen of the computer you are using, so mouse and keyboard input are off (they would ' +
+          'land back in this tab). Connect VS Code to a remote machine to control its desktop.'
+        : null,
+    });
     if (process.platform !== 'win32') {
       // Packages built elsewhere can lose the executable bit.
       try { fs.accessSync(this.binary, fs.constants.X_OK); } catch { try { fs.chmodSync(this.binary, 0o755); } catch { /* spawn reports it */ } }

@@ -1,5 +1,5 @@
-//! desktop-server: captures the desktop and streams it as H.264 (Windows, and
-//! Linux on X11; the platform code is in win/ and linux/).
+//! desktop-server: captures the desktop and streams it as H.264 (Windows,
+//! Linux on X11, macOS; the platform code is in win/, linux/ and mac/).
 //!
 //! Modes:
 //!   desktop-server [--encoder auto|hw|sw]                         stream on stdout (see PROTOCOL)
@@ -25,15 +25,20 @@
 //!   kind 4 AUDIO     u8 enabled – start/stop sending audio (off until the viewer asks)
 //!   kind 5 CLIPBOARD UTF-8 text – put it on the remote clipboard
 
+#[cfg(any(windows, target_os = "linux"))]
 mod convert;
 mod encoder;
 #[cfg(target_os = "linux")]
 mod linux;
+#[cfg(target_os = "macos")]
+mod mac;
 #[cfg(windows)]
 mod win;
 
 #[cfg(target_os = "linux")]
 use linux as platform;
+#[cfg(target_os = "macos")]
+use mac as platform;
 #[cfg(windows)]
 use win as platform;
 
@@ -140,7 +145,8 @@ fn stream(encoder_kind: &str) -> Result<()> {
     let want_key = Arc::new(AtomicBool::new(false));
     let closed = Arc::new(AtomicBool::new(false));
     let audio_enabled = Arc::new(AtomicBool::new(false));
-    // Desktop size for input scaling: width << 32 | height. Updated on every (re)start.
+    // Frame size for input scaling (the viewer's coordinates are in these pixels):
+    // width << 32 | height. Updated on every (re)start.
     let desktop_size = Arc::new(AtomicU64::new(0));
     let (clip_tx, clip_rx) = std::sync::mpsc::channel::<String>();
     let start = Instant::now();
@@ -200,7 +206,7 @@ fn stream(encoder_kind: &str) -> Result<()> {
         let Some((capturer, encoder)) = session.as_mut() else {
             match open(encoder_kind) {
                 Ok((capturer, encoder)) => {
-                    desktop_size.store(((capturer.src_width as u64) << 32) | capturer.src_height as u64, Ordering::Relaxed);
+                    desktop_size.store(((capturer.width as u64) << 32) | capturer.height as u64, Ordering::Relaxed);
                     let dims = [capturer.width.to_le_bytes(), capturer.height.to_le_bytes()].concat();
                     send(1, &[&dims, encoder.codec().as_bytes(), b"\0", encoder.label().as_bytes(), b"\0", encoder.name().as_bytes()])?;
                     if notice != NOTICE_CLEAR {

@@ -111,8 +111,12 @@ pub fn create(kind: &str, cap: &Capturer) -> Result<Box<dyn VideoEncoder>> {
             _ => {}
         }
     }
+    #[cfg(target_os = "macos")]
+    if kind == "auto" || kind == "hw" {
+        return Ok(Box::new(crate::platform::vt::VtEncoder::new(cap)?));
+    }
     anyhow::bail!("unknown --encoder {kind:?} (expected {})",
-        if cfg!(windows) { "auto, hw, sw" } else { "auto, hw, nvenc, vaapi, openh264" })
+        if cfg!(windows) { "auto, hw, sw" } else if cfg!(target_os = "macos") { "auto, hw" } else { "auto, hw, nvenc, vaapi, openh264" })
 }
 
 /// OpenH264: on Linux, Cisco's binary that the extension downloaded from Cisco
