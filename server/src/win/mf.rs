@@ -289,6 +289,9 @@ impl VideoEncoder for MfEncoder {
     fn name(&self) -> &str {
         &self.name
     }
+    fn label(&self) -> &str {
+        if self.events.is_some() { "GPU (Media Foundation)" } else { "Windows software encoder" }
+    }
 }
 
 impl MfEncoder {

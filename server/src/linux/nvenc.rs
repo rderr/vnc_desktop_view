@@ -300,6 +300,9 @@ impl VideoEncoder for NvEncoder {
     fn name(&self) -> &str {
         &self.name
     }
+    fn label(&self) -> &str {
+        "NVENC"
+    }
 }
 
 impl Drop for NvEncoder {

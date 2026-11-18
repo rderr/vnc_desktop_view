@@ -179,5 +179,17 @@ ${body}
   console.warn(`server notices skipped (${e.message.split('\n')[0]}); is Rust installed?`);
 }
 
-fs.writeFileSync('ThirdPartyNotices.txt', text + nvencText + vaText + serverText);
+// Cisco's OpenH264 binary: not bundled, but its license conditions require this
+// text wherever licensing information is shown to users.
+const openh264Text = `
+${rule}
+OpenH264 (Linux, optional; downloaded from Cisco to the remote machine when the
+user turns on the software encoder; not included in this package)
+OpenH264 Video Codec provided by Cisco Systems, Inc.
+${rule}
+
+${fs.readFileSync('scripts/openh264-binary-license.txt', 'utf8').trim()}
+`;
+
+fs.writeFileSync('ThirdPartyNotices.txt', text + nvencText + vaText + openh264Text + serverText);
 console.log(`ThirdPartyNotices.txt written (opus-decoder ${opusDecoderVersion}${serverText ? ', desktop server' : ''})`);

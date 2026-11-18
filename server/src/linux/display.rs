@@ -20,6 +20,11 @@ pub fn find_display() {
             unsafe { std::env::set_var("XDG_RUNTIME_DIR", dir) };
         }
     }
+    // libva logs every device it opens; errors are enough (we report our own).
+    if std::env::var_os("LIBVA_MESSAGING_LEVEL").is_none() {
+        // SAFETY: called at startup, before any other threads exist.
+        unsafe { std::env::set_var("LIBVA_MESSAGING_LEVEL", "1") };
+    }
     if std::env::var_os("DISPLAY").is_some() {
         return;
     }

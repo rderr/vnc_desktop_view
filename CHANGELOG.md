@@ -16,6 +16,7 @@ The desktop is now streamed by the extension's own desktop server instead of VNC
 - Recovery from resolution changes, the lock screen, UAC prompts and server crashes without closing the tab
 - Linux remotes: X11 desktops with an NVIDIA GPU (NVENC, up to 4K), with input, sound (PulseAudio / PipeWire) and clipboard sync
 - Linux remotes with Intel or AMD GPUs through VA-API (experimental, untested on real hardware)
+- Linux remotes without a usable GPU encoder can use the OpenH264 software encoder, downloaded from Cisco after asking (`vncDesktopView.openH264`)
 
 ### Removed
 - VNC: application mode, full-access mode, custom VNC servers, the test desktop, saved VNC passwords, and the `vncDesktopView.server`, `host`, `port` and `scaleToFit` settings

@@ -152,7 +152,6 @@ impl Capturer {
     }
 
     /// Copies the latest image as tightly packed BGRA, `width * height * 4` bytes.
-    #[allow(dead_code)] // used by the OpenH264 test encoder
     pub fn read_bgra(&self, buf: &mut Vec<u8>) -> Result<()> {
         let row = self.width as usize * 4;
         buf.resize(row * self.height as usize, 0);

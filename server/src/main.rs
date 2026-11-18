@@ -3,17 +3,20 @@
 //!
 //! Modes:
 //!   desktop-server [--encoder auto|hw|sw]                         stream on stdout (see PROTOCOL)
+//!                  [--openh264 PATH]  Linux: Cisco's OpenH264 library, the software fallback
 //!   desktop-server [--encoder ...] --out FILE [--seconds N]       write a raw Annex B .h264 file (testing)
 //!
 //! PROTOCOL (stdout, little-endian): each message is `u8 kind, u32 len, payload[len]`.
-//!   kind 1 HELLO  payload: u32 width, u32 height, codec string (UTF-8, e.g. "avc1.42E033").
+//!   kind 1 HELLO  payload: u32 width, u32 height, then UTF-8: codec (e.g. "avc1.42E033"), NUL,
+//!                 short encoder label (e.g. "NVENC"), NUL, full encoder name.
 //!                 Sent again whenever capture restarts (e.g. after a resolution change);
 //!                 the viewer resets its decoder, and a keyframe follows.
 //!   kind 2 VIDEO  payload: u8 flags (bit 0 = keyframe), u64 timestamp_us, Annex B data
 //!   kind 3 AUDIO  payload: u64 timestamp_us, one Opus packet (48 kHz stereo, 20 ms)
 //!   kind 4 CLIPBOARD payload: UTF-8 text (the remote clipboard changed)
 //!   kind 5 NOTICE payload: u8 code, UTF-8 detail. 0 = clear, 1 = a secure desktop (lock
-//!                 screen, UAC prompt) is showing and can't be captured, 2 = capture failing (detail)
+//!                 screen, UAC prompt) is showing and can't be captured, 2 = capture failing (detail),
+//!                 3 = no usable H.264 encoder (detail); the software encoder (--openh264) would help
 //! stdin: same framing.
 //!   kind 1 KEYFRAME  (no payload) – send a keyframe next
 //!   kind 2 POINTER   u16 x, u16 y (desktop pixels), u8 buttons (1 left, 2 right, 4 middle),
@@ -47,6 +50,9 @@ fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().collect();
     let arg = |name: &str| args.iter().position(|a| a == name).and_then(|i| args.get(i + 1)).cloned();
     let encoder_kind = arg("--encoder").unwrap_or_else(|| "auto".into());
+    if let Some(path) = arg("--openh264") {
+        let _ = encoder::OPENH264_PATH.set(path.into());
+    }
     #[cfg(target_os = "linux")]
     linux::find_display();
 
@@ -128,6 +134,7 @@ fn send(kind: u8, parts: &[&[u8]]) -> std::io::Result<()> {
 const NOTICE_CLEAR: u8 = 0;
 const NOTICE_SECURE_DESKTOP: u8 = 1;
 const NOTICE_CAPTURE_FAILING: u8 = 2;
+const NOTICE_NO_ENCODER: u8 = 3;
 
 fn stream(encoder_kind: &str) -> Result<()> {
     let want_key = Arc::new(AtomicBool::new(false));
@@ -195,7 +202,7 @@ fn stream(encoder_kind: &str) -> Result<()> {
                 Ok((capturer, encoder)) => {
                     desktop_size.store(((capturer.src_width as u64) << 32) | capturer.src_height as u64, Ordering::Relaxed);
                     let dims = [capturer.width.to_le_bytes(), capturer.height.to_le_bytes()].concat();
-                    send(1, &[&dims, encoder.codec().as_bytes()])?;
+                    send(1, &[&dims, encoder.codec().as_bytes(), b"\0", encoder.label().as_bytes(), b"\0", encoder.name().as_bytes()])?;
                     if notice != NOTICE_CLEAR {
                         send(5, &[&[NOTICE_CLEAR]])?;
                         notice = NOTICE_CLEAR;
@@ -206,13 +213,20 @@ fn stream(encoder_kind: &str) -> Result<()> {
                     need_send = true;
                 }
                 Err(e) => {
-                    let code = if capture::is_secure_desktop(&e) { NOTICE_SECURE_DESKTOP } else { NOTICE_CAPTURE_FAILING };
+                    let code = if capture::is_secure_desktop(&e) {
+                        NOTICE_SECURE_DESKTOP
+                    } else if e.downcast_ref::<encoder::NoEncoder>().is_some() {
+                        NOTICE_NO_ENCODER
+                    } else {
+                        NOTICE_CAPTURE_FAILING
+                    };
                     if code != notice {
                         eprintln!("desktop-server: capture unavailable ({e:#}); retrying");
                         send(5, &[&[code], format!("{e:#}").as_bytes()])?;
                         notice = code;
                     }
-                    std::thread::sleep(Duration::from_millis(500));
+                    // A missing encoder won't appear by itself; don't keep probing for it.
+                    std::thread::sleep(Duration::from_millis(if code == NOTICE_NO_ENCODER { 10_000 } else { 500 }));
                 }
             }
             continue;

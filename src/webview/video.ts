@@ -24,8 +24,9 @@ let needKey = true;
 const stats = { bytes: 0, frames: 0, decodeMs: 0 };
 const submitted = new Map<number, number>(); // timestamp -> performance.now() at submit
 
-function setStatus(text: string): void {
+function setStatus(text: string, title = ''): void {
   statusEl.textContent = text;
+  statusEl.title = title;
 }
 
 function newDecoder(): void {
@@ -63,7 +64,8 @@ window.addEventListener('message', (event: MessageEvent<VideoToWebview>) => {
       codec = msg.codec;
       needKey = true;
       newDecoder();
-      setStatus(`Connected · ${msg.width}×${msg.height}`);
+      setStatus(`Connected · ${msg.width}×${msg.height}${msg.encoder ? ` · ${msg.encoder}` : ''}`,
+        msg.encoderName ? `Encoder: ${msg.encoderName}` : '');
       // A (re)started server sends no audio until asked.
       if (soundWanted && player.running) post({ type: 'audio', enabled: true });
       break;

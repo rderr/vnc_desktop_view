@@ -516,6 +516,9 @@ impl VideoEncoder for VaEncoder {
     fn name(&self) -> &str {
         &self.name
     }
+    fn label(&self) -> &str {
+        "VA-API"
+    }
 }
 
 impl VaEncoder {

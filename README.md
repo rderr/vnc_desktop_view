@@ -23,7 +23,7 @@ The screen travels through VS Code's own connection to the remote, so whatever a
 The remote desktop is streamed as H.264 video, encoded by the remote machine's GPU and decoded by VS Code on your machine. It only sends frames when something changes, and uses a fraction of the bandwidth of VNC: a few hundred KB/s for everyday use at up to 60 fps.
 
 - **Windows:** the GPU's encoder (Intel Quick Sync, NVIDIA NVENC, AMD — whatever Windows provides), fed straight from video memory. Machines without a hardware encoder use the H.264 encoder built into Windows.
-- **Linux:** NVIDIA's NVENC, or VA-API on Intel and AMD GPUs (experimental), at up to 4K.
+- **Linux:** NVIDIA's NVENC, or VA-API on Intel and AMD GPUs (experimental), at up to 4K. Machines without either can use the OpenH264 software encoder, which the extension offers to download from Cisco.
 
 ### Sound
 
@@ -56,11 +56,17 @@ Resolution changes, the Windows lock screen, UAC prompts and GPU resets are hand
 |---|---|
 | System | x64, glibc 2.34 or newer (Ubuntu 22.04+, Debian 12+, Linux Mint 21+, Fedora 35+, RHEL / Rocky 9+) |
 | Desktop session | **X11 (Xorg).** Any desktop environment: Cinnamon, Xfce, MATE, KDE Plasma on X11, GNOME on Xorg, … Wayland sessions aren't supported yet; on GNOME or KDE, pick the X11 / Xorg session on the login screen. |
-| GPU | **NVIDIA** GPU with NVIDIA's driver, version 530 or newer (NVENC), or *(experimental, not yet tested on real hardware)* an **Intel or AMD** GPU whose VA-API driver can encode H.264: Intel's `intel-media-va-driver` (iHD) or `i965-va-driver`, or Mesa's `radeonsi` for AMD. Some distributions (e.g. Fedora, openSUSE) build Mesa without H.264 encoding; there you need their "freeworld" Mesa VA drivers. The open-source nouveau driver for NVIDIA isn't supported. |
+| GPU | **NVIDIA** GPU with NVIDIA's driver, version 530 or newer (NVENC), or *(experimental, not yet tested on real hardware)* an **Intel or AMD** GPU whose VA-API driver can encode H.264: Intel's `intel-media-va-driver` (iHD) or `i965-va-driver`, or Mesa's `radeonsi` for AMD. Some distributions (e.g. Fedora, openSUSE) build Mesa without H.264 encoding; there you need their "freeworld" Mesa VA drivers. The open-source nouveau driver for NVIDIA isn't supported. Without a usable GPU encoder, the **OpenH264** software encoder can be used instead (see below). |
 | Screen size | At most 4096 × 4096 pixels — all monitors together, since X11 treats them as one screen |
 | Sound (optional) | PulseAudio, or PipeWire with its PulseAudio server (most desktops). Without it, everything but sound works. |
 
 Nothing needs to be installed on Linux: the desktop server only depends on the C library, and uses the GPU driver and the sound server that are already there. It finds the logged-in desktop session itself. With both an NVIDIA and an Intel / AMD GPU, NVENC is used.
+
+#### Software encoder (OpenH264)
+
+On a Linux machine without a usable GPU encoder (for example a virtual machine), the tab asks whether to use **OpenH264** instead: Cisco's H.264 encoder, which the extension downloads once from Cisco to the remote machine (about 0.6 MB, checked against a pinned SHA-256; unpacking it needs the `bzip2` program). It works at any resolution but uses much more CPU than a GPU: a 4K screen runs at around 20 fps on a 4-core desktop CPU. Turn it on or off at any time with the `vncDesktopView.openH264` setting; `always` uses it even on machines with a GPU encoder (to compare, or if a GPU driver misbehaves).
+
+*OpenH264 Video Codec provided by Cisco Systems, Inc.*
 
 ## Getting Started
 
@@ -72,12 +78,14 @@ Nothing needs to be installed on Linux: the desktop server only depends on the C
 | Setting | Default | Description |
 |---------|---------|-------------|
 | `vncDesktopView.commandKey` | `ctrl` | Mac only: what ⌘ sends to the remote desktop (`ctrl`, or `windows` = the Windows / Super key) |
+| `vncDesktopView.openH264` | `ask` | Linux remotes without a usable GPU encoder: use Cisco's OpenH264 software encoder (`ask`, `on`, `off`; `always` uses it even when there is a GPU encoder). *OpenH264 Video Codec provided by Cisco Systems, Inc.* |
 
 ## Security & Privacy
 
 - **No telemetry.** The extension sends nothing anywhere. Screen, sound, keyboard, mouse and clipboard data only travel over your existing VS Code remote connection.
 - **Nothing exposed.** The desktop server runs as your user, only while a desktop tab is open, and talks to the extension over its standard input and output. It opens no network ports.
 - **No changes to the remote machine.** Nothing is installed or configured; the desktop server ships inside the extension.
+- **Downloads.** Only if you choose the OpenH264 software encoder: its library is downloaded once from Cisco (`ciscobinary.openh264.org`), checked against a pinned SHA-256, and kept in the extension's storage folder on the remote machine. Nothing else is ever downloaded.
 - **Clipboard.** Text is synced only while a desktop tab is open, up to 1 MB.
 - **Sound.** On Linux the remote's sound is only recorded while **Sound** is on.
 
@@ -130,6 +138,7 @@ src/
 ├── extension.ts              # Commands
 ├── videoSession.ts           # One desktop tab: runs the server, flow control, clipboard
 ├── videoProtocol.ts          # Messages between the tab and the extension
+├── openh264.ts               # Downloads Cisco's OpenH264 (Linux software encoder)
 └── webview/
     ├── video.ts              # Viewer: WebCodecs H.264, input, toolbar
     ├── audio.ts              # Opus playback (WebAssembly decoder)
@@ -156,7 +165,8 @@ server/src/                   # Desktop server (Rust)
 scripts/
 ├── package.mjs               # Builds the server and this platform's package(s)
 ├── build-notices.mjs         # Generates ThirdPartyNotices.txt
-└── server-notices.mjs        # Licenses of the server's Rust crates
+├── server-notices.mjs        # Licenses of the server's Rust crates
+└── openh264-binary-license.txt # Cisco's OpenH264 binary license (copied into the notices)
 ```
 
 ## License

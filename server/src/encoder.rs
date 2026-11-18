@@ -2,10 +2,11 @@
 //!
 //! Shipped builds only use encoders whose H.264 patent licensing is covered by
 //! someone else: Windows' Media Foundation encoders (the GPU's, else Windows'
-//! own software encoder), and on Linux the GPU's encoder through its driver
-//! (NVENC, VA-API). OpenH264 is only available in local builds with
-//! `--features openh264`: Cisco's patent license covers Cisco's own binaries,
-//! not copies compiled into this program.
+//! own software encoder); on Linux the GPU's encoder through its driver (NVENC,
+//! VA-API), else Cisco's own OpenH264 binary, which the extension downloads
+//! from Cisco when the user agrees. Cisco's patent license covers that binary,
+//! not copies of OpenH264 compiled into this program, so compiling it in
+//! (`--features openh264`) is for local testing only.
 
 use crate::platform::capture::Capturer;
 use anyhow::Result;
@@ -28,17 +29,33 @@ pub trait VideoEncoder {
     /// WebCodecs codec string for the stream.
     fn codec(&self) -> &str;
     fn name(&self) -> &str;
+    /// Short form of `name` for the viewer's toolbar, e.g. "NVENC" or "OpenH264 (software)".
+    fn label(&self) -> &str;
 }
 
-/// Windows: `auto` tries the hardware encoder, then Windows' software encoder;
-/// `hw` / `sw` force one. Linux: `auto` / `hw` tries NVENC (NVIDIA), then
-/// VA-API (Intel, AMD); `nvenc` / `vaapi` force one.
-/// `openh264` needs a build with that feature.
-pub fn create(kind: &str, cap: &Capturer) -> Result<Box<dyn VideoEncoder>> {
-    #[cfg(feature = "openh264")]
-    if kind == "openh264" {
-        return Ok(Box::new(openh264_encoder::SoftwareEncoder::new(cap.width, cap.height)?));
+/// Where Cisco's OpenH264 library was downloaded (`--openh264 PATH`), if the
+/// user enabled it: the software fallback on Linux.
+pub static OPENH264_PATH: std::sync::OnceLock<std::path::PathBuf> = std::sync::OnceLock::new();
+
+/// No encoder could be used. The viewer may offer to set up the software
+/// encoder (Cisco's OpenH264) when it sees this.
+#[derive(Debug)]
+pub struct NoEncoder(pub String);
+
+impl std::fmt::Display for NoEncoder {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
     }
+}
+
+impl std::error::Error for NoEncoder {}
+
+/// Windows: `auto` tries the hardware encoder, then Windows' software encoder;
+/// `hw` / `sw` force one. Linux: `auto` tries NVENC (NVIDIA), then VA-API
+/// (Intel, AMD), then Cisco's OpenH264 if `--openh264` gave its path;
+/// `hw` / `nvenc` / `vaapi` / `openh264` restrict the choice.
+/// In local builds with the `openh264` feature, `openh264` uses the compiled-in copy.
+pub fn create(kind: &str, cap: &Capturer) -> Result<Box<dyn VideoEncoder>> {
     #[cfg(windows)]
     {
         use crate::platform::mf::MfEncoder;
@@ -54,34 +71,53 @@ pub fn create(kind: &str, cap: &Capturer) -> Result<Box<dyn VideoEncoder>> {
                     }
                 };
             }
+            #[cfg(feature = "openh264")]
+            "openh264" => return Ok(Box::new(openh264_encoder::SoftwareEncoder::compiled_in(cap.width, cap.height)?)),
             _ => {}
         }
     }
     #[cfg(target_os = "linux")]
     {
         use crate::platform::{nvenc::NvEncoder, vaapi::VaEncoder};
+        use openh264_encoder::SoftwareEncoder;
+        let cisco = || match OPENH264_PATH.get() {
+            Some(path) => SoftwareEncoder::cisco(path, cap.width, cap.height),
+            None => anyhow::bail!("OpenH264 isn't enabled (it needs --openh264 PATH)"),
+        };
         match kind {
             "nvenc" => return Ok(Box::new(NvEncoder::new(cap)?)),
             "vaapi" => return Ok(Box::new(VaEncoder::new(cap)?)),
+            #[cfg(feature = "openh264")]
+            "openh264" if OPENH264_PATH.get().is_none() => {
+                return Ok(Box::new(SoftwareEncoder::compiled_in(cap.width, cap.height)?));
+            }
+            "openh264" => return Ok(Box::new(cisco()?)),
             "auto" | "hw" => {
                 let nvenc = match NvEncoder::new(cap) {
                     Ok(e) => return Ok(Box::new(e)),
                     Err(e) => e,
                 };
-                return match VaEncoder::new(cap) {
-                    Ok(e) => Ok(Box::new(e)),
-                    Err(vaapi) => anyhow::bail!("no hardware H.264 encoder found. NVIDIA (NVENC): {nvenc:#}. Intel / AMD (VA-API): {vaapi:#}"),
+                let vaapi = match VaEncoder::new(cap) {
+                    Ok(e) => return Ok(Box::new(e)),
+                    Err(e) => e,
                 };
+                let hardware = format!("NVIDIA (NVENC): {nvenc:#}. Intel / AMD (VA-API): {vaapi:#}");
+                if kind == "auto" && OPENH264_PATH.get().is_some() {
+                    eprintln!("desktop-server: no hardware H.264 encoder ({hardware}); using OpenH264");
+                    return Ok(Box::new(cisco()?));
+                }
+                return Err(NoEncoder(format!("no hardware H.264 encoder found. {hardware}")).into());
             }
             _ => {}
         }
     }
-    anyhow::bail!("unknown --encoder {kind:?} (expected {}{})",
-        if cfg!(windows) { "auto, hw, sw" } else { "auto, hw, nvenc, vaapi" },
-        if cfg!(feature = "openh264") { ", openh264" } else { "" })
+    anyhow::bail!("unknown --encoder {kind:?} (expected {})",
+        if cfg!(windows) { "auto, hw, sw" } else { "auto, hw, nvenc, vaapi, openh264" })
 }
 
-#[cfg(feature = "openh264")]
+/// OpenH264: on Linux, Cisco's binary that the extension downloaded from Cisco
+/// (with the user's consent); in local test builds, optionally compiled in.
+#[cfg(any(feature = "openh264", target_os = "linux"))]
 mod openh264_encoder {
     use super::{MAX_FPS, VideoEncoder, bitrate};
     use crate::platform::capture::Capturer;
@@ -97,10 +133,25 @@ mod openh264_encoder {
         yuv: YUVBuffer,
         bgra: Vec<u8>,
         dims: (usize, usize),
+        codec: String,
+        name: &'static str,
     }
 
     impl SoftwareEncoder {
-        pub fn new(width: u32, height: u32) -> Result<Self> {
+        /// Cisco's OpenH264 library at `path`; only accepted if its SHA-256 is that
+        /// of a known Cisco release.
+        #[cfg(target_os = "linux")]
+        pub fn cisco(path: &std::path::Path, width: u32, height: u32) -> Result<Self> {
+            let api = OpenH264API::from_blob_path(path).with_context(|| format!("loading {}", path.display()))?;
+            Self::new(api, width, height, "OpenH264 (software; OpenH264 Video Codec provided by Cisco Systems, Inc.)")
+        }
+
+        #[cfg(feature = "openh264")]
+        pub fn compiled_in(width: u32, height: u32) -> Result<Self> {
+            Self::new(OpenH264API::from_source(), width, height, "OpenH264 (software, compiled in: local builds only)")
+        }
+
+        fn new(api: OpenH264API, width: u32, height: u32, name: &'static str) -> Result<Self> {
             let config = EncoderConfig::new()
                 // ScreenContentRealTime had 300-700 ms spikes on large changes; camera mode doesn't.
                 .usage_type(UsageType::CameraVideoRealTime)
@@ -110,10 +161,12 @@ mod openh264_encoder {
                 .complexity(Complexity::Low)
                 .intra_frame_period(IntraFramePeriod::from_num_frames(0))
                 .skip_frames(true);
-            let encoder =
-                Encoder::with_api_config(OpenH264API::from_source(), config).context("creating OpenH264 encoder")?;
+            let encoder = Encoder::with_api_config(api, config).context("creating OpenH264 encoder")?;
             let dims = (width as usize, height as usize);
-            Ok(Self { encoder, yuv: YUVBuffer::new(dims.0, dims.1), bgra: Vec::new(), dims })
+            // Baseline; level 4.2 up to 1920x1088, else 5.2.
+            let mbs = width.div_ceil(16) * height.div_ceil(16);
+            let codec = format!("avc1.42E0{:02X}", if mbs <= 8160 { 42 } else { 52 });
+            Ok(Self { encoder, yuv: YUVBuffer::new(dims.0, dims.1), bgra: Vec::new(), dims, codec, name })
         }
     }
 
@@ -129,10 +182,13 @@ mod openh264_encoder {
             self.encoder.force_intra_frame();
         }
         fn codec(&self) -> &str {
-            "avc1.42E033"
+            &self.codec
         }
         fn name(&self) -> &str {
-            "OpenH264 (software, local builds only)"
+            self.name
+        }
+        fn label(&self) -> &str {
+            "OpenH264 (software)"
         }
     }
 }

@@ -13,7 +13,7 @@ export type VideoToExtension =
   | { type: 'log'; text: string };
 
 export type VideoToWebview =
-  | { type: 'hello'; width: number; height: number; codec: string }
+  | { type: 'hello'; width: number; height: number; codec: string; encoder: string; encoderName: string }
   | { type: 'video'; key: boolean; timestamp: number; data: Uint8Array }
   | { type: 'audio'; timestamp: number; data: Uint8Array } // one Opus packet, 48 kHz stereo
   | { type: 'status'; text: string }

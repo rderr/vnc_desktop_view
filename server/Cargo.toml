@@ -5,8 +5,9 @@ edition = "2024"
 
 [dependencies]
 anyhow = "1.0.104"
-# Local testing only (--features openh264); never in shipped builds, see src/encoder.rs.
-openh264 = { version = "0.9.10", optional = true }
+# Compiled-in OpenH264 (--features openh264) is for local testing only and never
+# shipped; Linux builds load Cisco's own binary instead (see src/encoder.rs).
+openh264 = { version = "0.9.10", default-features = false, optional = true }
 opus = "0.4.0"
 
 [target.'cfg(windows)'.dependencies]
@@ -15,13 +16,14 @@ windows = { version = "0.62.2", features = ["Win32_Foundation", "Win32_Graphics_
 [target.'cfg(target_os = "linux")'.dependencies]
 libc = "0.2.191"
 libloading = "0.9.1"
+openh264 = { version = "0.9.10", default-features = false, features = ["libloading"] }
 x11rb = { version = "0.14.0", features = ["shm", "damage", "xfixes", "xtest", "randr", "allow-unsafe-code"] }
 
 [dev-dependencies]
 png = "0.18.1"
 
 [features]
-openh264 = ["dep:openh264"]
+openh264 = ["dep:openh264", "openh264/source"]
 
 [[example]]
 name = "verify"

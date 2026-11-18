@@ -64,6 +64,23 @@
           ],
           "default": "ctrl",
           "markdownDescription": "Mac only: what the ⌘ (Command) key sends to the remote desktop."
+        },
+        "vncDesktopView.openH264": {
+          "type": "string",
+          "enum": [
+            "ask",
+            "on",
+            "always",
+            "off"
+          ],
+          "enumDescriptions": [
+            "Ask the first time a Linux remote has no usable hardware encoder.",
+            "Use OpenH264 when there is no usable hardware encoder (downloaded from Cisco when first needed).",
+            "Always use OpenH264, even when there is a hardware encoder (for comparison, or if the GPU encoder misbehaves). Downloaded from Cisco when first needed.",
+            "Never use OpenH264."
+          ],
+          "default": "ask",
+          "markdownDescription": "Linux remotes without a usable hardware H.264 encoder: use the **OpenH264** software encoder instead, downloaded once from Cisco to the remote machine. It uses more CPU than a GPU encoder.\n\n*OpenH264 Video Codec provided by Cisco Systems, Inc.*"
         }
       }
     }
