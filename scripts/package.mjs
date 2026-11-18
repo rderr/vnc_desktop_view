@@ -9,8 +9,9 @@
 // Needs Rust. On Windows also the Visual Studio C++ build tools (they include
 // CMake, which libopus needs); on Linux a C compiler and CMake.
 //
-//   node scripts/package.mjs            build this platform's package(s)
-//   node scripts/package.mjs --publish  build, then publish them to the Marketplace (needs VSCE_PAT)
+//   node scripts/package.mjs                     build this platform's package(s)
+//   node scripts/package.mjs --target darwin-x64 on an Apple Silicon Mac: build the Intel Mac package
+//   node scripts/package.mjs --publish           build, then publish them to the Marketplace (needs VSCE_PAT)
 import { execFileSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -18,7 +19,15 @@ import * as path from 'path';
 const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
 const vsce = ['node_modules/@vscode/vsce/vsce'];
 const windows = process.platform === 'win32';
-const target = `${process.platform}-${process.arch}`;
+const argTarget = process.argv.includes('--target') ? process.argv[process.argv.indexOf('--target') + 1] : undefined;
+const target = argTarget ?? `${process.platform}-${process.arch}`;
+// Cross-building: only Apple Silicon -> Intel Mac is set up (Rust target x86_64-apple-darwin).
+const rustTarget = { 'darwin-x64': 'x86_64-apple-darwin', 'darwin-arm64': 'aarch64-apple-darwin' }[target];
+const cross = argTarget !== undefined && argTarget !== `${process.platform}-${process.arch}`;
+if (cross && !(process.platform === 'darwin' && rustTarget)) {
+  console.error(`Can't build for ${target} on ${process.platform}-${process.arch}.`);
+  process.exit(1);
+}
 const exe = windows ? 'desktop-server.exe' : 'desktop-server';
 const outputs = { platform: `${pkg.name}-${pkg.version}-${target}.vsix`, universal: `${pkg.name}-${pkg.version}.vsix` };
 
@@ -49,10 +58,11 @@ if (!['win32-x64', 'linux-x64', 'darwin-arm64', 'darwin-x64'].includes(target)) 
 // 1. The desktop server.
 const dir = cmakeDir();
 const env = dir ? { ...process.env, PATH: `${dir}${path.delimiter}${process.env.PATH}` } : process.env;
-run('cargo', ['build', '--release', '--manifest-path', 'server/Cargo.toml'], env);
+if (cross) run('rustup', ['target', 'add', rustTarget], env);
+run('cargo', ['build', '--release', '--manifest-path', 'server/Cargo.toml', ...(cross ? ['--target', rustTarget] : [])], env);
 fs.rmSync('bin', { recursive: true, force: true });
 fs.mkdirSync('bin');
-fs.copyFileSync(path.join('server', 'target', 'release', exe), path.join('bin', exe));
+fs.copyFileSync(path.join('server', 'target', ...(cross ? [rustTarget] : []), 'release', exe), path.join('bin', exe));
 
 // 2. The packages (vsce runs `npm run build` itself, via vscode:prepublish).
 try {
@@ -61,7 +71,7 @@ try {
   fs.rmSync('bin', { recursive: true, force: true }); // never ship it in the universal package
 }
 const built = [outputs.platform];
-if (windows) {
+if (windows && !cross) {
   // Built on Windows only, so it is published exactly once.
   run(process.execPath, [...vsce, 'package', '--out', outputs.universal]);
   built.push(outputs.universal);

@@ -4,7 +4,7 @@ All notable changes to the Remote Desktop View extension (formerly VNC Desktop V
 
 ## [Unreleased]
 
-## [0.2.0]
+## [0.2.0] - 2026-11-17
 
 The desktop is now streamed by the extension's own desktop server instead of VNC. The extension is renamed **Remote Desktop View**; its ID and settings prefix are unchanged.
 
