@@ -32,10 +32,14 @@ async function openDesktop(context: vscode.ExtensionContext, log: vscode.OutputC
   }
   const binary = findServerBinary(context.extensionPath);
   if (!binary) {
-    // Installed packages ship bin/desktop-server.exe; a development checkout needs it built.
-    void vscode.window.showErrorMessage(
-      'The desktop server is missing from this installation. Reinstall the extension, or in a ' +
-      'development checkout run "cargo build --release" in server/.');
+    // Platform packages ship bin/desktop-server; the universal package (installed on
+    // platforms without one, e.g. ARM) and an unbuilt development checkout don't.
+    const platform = `${process.platform}-${process.arch}`;
+    const supported = ['win32-x64', 'linux-x64', 'darwin-arm64', 'darwin-x64'].includes(platform);
+    void vscode.window.showErrorMessage(supported
+      ? 'The desktop server is missing from this installation. Reinstall the extension, or in a ' +
+        'development checkout run "cargo build --release" in server/.'
+      : `Remote Desktop View doesn't support ${platform} remotes yet (supported: Windows x64, Linux x64, macOS).`);
     return;
   }
   log.appendLine(`open desktop: remote=${vscode.env.remoteName ?? 'none'}`);
