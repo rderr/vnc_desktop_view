@@ -22,6 +22,7 @@
 //!   kind 4 AUDIO     u8 enabled – start/stop sending audio (off until the viewer asks)
 //!   kind 5 CLIPBOARD UTF-8 text – put it on the remote clipboard
 
+mod convert;
 mod encoder;
 #[cfg(target_os = "linux")]
 mod linux;

@@ -2,8 +2,8 @@
 //!
 //! Shipped builds only use encoders whose H.264 patent licensing is covered by
 //! someone else: Windows' Media Foundation encoders (the GPU's, else Windows'
-//! own software encoder), and on Linux the GPU's encoder through NVIDIA's
-//! driver (NVENC). OpenH264 is only available in local builds with
+//! own software encoder), and on Linux the GPU's encoder through its driver
+//! (NVENC, VA-API). OpenH264 is only available in local builds with
 //! `--features openh264`: Cisco's patent license covers Cisco's own binaries,
 //! not copies compiled into this program.
 
@@ -31,7 +31,8 @@ pub trait VideoEncoder {
 }
 
 /// Windows: `auto` tries the hardware encoder, then Windows' software encoder;
-/// `hw` / `sw` force one. Linux: `auto` / `hw` is NVENC.
+/// `hw` / `sw` force one. Linux: `auto` / `hw` tries NVENC (NVIDIA), then
+/// VA-API (Intel, AMD); `nvenc` / `vaapi` force one.
 /// `openh264` needs a build with that feature.
 pub fn create(kind: &str, cap: &Capturer) -> Result<Box<dyn VideoEncoder>> {
     #[cfg(feature = "openh264")]
@@ -57,11 +58,26 @@ pub fn create(kind: &str, cap: &Capturer) -> Result<Box<dyn VideoEncoder>> {
         }
     }
     #[cfg(target_os = "linux")]
-    if kind == "auto" || kind == "hw" {
-        return Ok(Box::new(crate::platform::nvenc::NvEncoder::new(cap)?));
+    {
+        use crate::platform::{nvenc::NvEncoder, vaapi::VaEncoder};
+        match kind {
+            "nvenc" => return Ok(Box::new(NvEncoder::new(cap)?)),
+            "vaapi" => return Ok(Box::new(VaEncoder::new(cap)?)),
+            "auto" | "hw" => {
+                let nvenc = match NvEncoder::new(cap) {
+                    Ok(e) => return Ok(Box::new(e)),
+                    Err(e) => e,
+                };
+                return match VaEncoder::new(cap) {
+                    Ok(e) => Ok(Box::new(e)),
+                    Err(vaapi) => anyhow::bail!("no hardware H.264 encoder found. NVIDIA (NVENC): {nvenc:#}. Intel / AMD (VA-API): {vaapi:#}"),
+                };
+            }
+            _ => {}
+        }
     }
     anyhow::bail!("unknown --encoder {kind:?} (expected {}{})",
-        if cfg!(windows) { "auto, hw, sw" } else { "auto, hw" },
+        if cfg!(windows) { "auto, hw, sw" } else { "auto, hw, nvenc, vaapi" },
         if cfg!(feature = "openh264") { ", openh264" } else { "" })
 }
 

@@ -1,8 +1,9 @@
 //! CPU color conversion for encoders that take frames in system memory.
 
 /// BGRA -> NV12 (Y plane, then interleaved U/V at half resolution), BT.601
-/// limited range, on the CPU: the fallback when the GPU can't convert (see
-/// gpu.rs). Rows are split across threads; ~2 ms for 1440x900.
+/// limited range, on the CPU: for encoders that take NV12 in system memory
+/// (Windows without GPU conversion, VA-API). Rows are split across threads;
+/// ~2 ms for 1440x900.
 pub struct Converter {
     w: usize,
     h: usize,
@@ -13,7 +14,14 @@ impl Converter {
         Self { w: width as usize, h: height as usize }
     }
 
+    /// `bgra` is tightly packed: `width * 4` bytes per row.
+    #[allow(dead_code)] // used on Windows
     pub fn nv12(&mut self, bgra: &[u8], out: &mut Vec<u8>) {
+        self.nv12_strided(bgra, self.w * 4, out);
+    }
+
+    /// `bgra` has `stride` bytes per row (at least `width * 4`).
+    pub fn nv12_strided(&mut self, bgra: &[u8], stride: usize, out: &mut Vec<u8>) {
         let (w, h) = (self.w, self.h);
         out.resize(w * h * 3 / 2, 0);
         let (y_plane, uv_plane) = out.split_at_mut(w * h);
@@ -26,17 +34,17 @@ impl Converter {
             let uv_bands = uv_plane.chunks_mut(pairs_per_band * w);
             for (band, (y_out, uv_out)) in y_bands.zip(uv_bands).enumerate() {
                 let first_row = band * pairs_per_band * 2;
-                s.spawn(move || convert_band(bgra, w, first_row, y_out, uv_out));
+                s.spawn(move || convert_band(bgra, stride, w, first_row, y_out, uv_out));
             }
         });
     }
 }
 
-fn convert_band(bgra: &[u8], w: usize, first_row: usize, y_out: &mut [u8], uv_out: &mut [u8]) {
+fn convert_band(bgra: &[u8], stride: usize, w: usize, first_row: usize, y_out: &mut [u8], uv_out: &mut [u8]) {
     let luma = |b: i32, g: i32, r: i32| (((66 * r + 129 * g + 25 * b + 128) >> 8) + 16) as u8;
     for pair in 0..uv_out.len() / w {
         let row0 = first_row + pair * 2;
-        let (src0, src1) = (&bgra[row0 * w * 4..(row0 + 1) * w * 4], &bgra[(row0 + 1) * w * 4..(row0 + 2) * w * 4]);
+        let (src0, src1) = (&bgra[row0 * stride..][..w * 4], &bgra[(row0 + 1) * stride..][..w * 4]);
         let (dst0, dst1) = y_out[pair * 2 * w..(pair * 2 + 2) * w].split_at_mut(w);
         let uv = &mut uv_out[pair * w..(pair + 1) * w];
         for x in (0..w).step_by(2) {

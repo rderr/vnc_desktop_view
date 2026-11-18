@@ -110,6 +110,36 @@ FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
 OTHER DEALINGS IN THE SOFTWARE.
 `;
 
+// VA-API definitions (from libva's headers) compiled into the Linux server.
+const vaText = `
+${rule}
+libva 2.14 headers va/va.h, va/va_enc_h264.h (Linux packages, bin/desktop-server)
+https://github.com/intel/libva
+${rule}
+
+Copyright (c) 2007-2009 Intel Corporation. All Rights Reserved.
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the
+"Software"), to deal in the Software without restriction, including
+without limitation the rights to use, copy, modify, merge, publish,
+distribute, sub license, and/or sell copies of the Software, and to
+permit persons to whom the Software is furnished to do so, subject to
+the following conditions:
+
+The above copyright notice and this permission notice (including the
+next paragraph) shall be included in all copies or substantial portions
+of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NON-INFRINGEMENT.
+IN NO EVENT SHALL INTEL AND/OR ITS SUPPLIERS BE LIABLE FOR
+ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+`;
+
 // The desktop server (bin/desktop-server[.exe], Windows and Linux packages). Licenses
 // with identical text are printed once, listing the packages that use them.
 let serverText = '';
@@ -149,5 +179,5 @@ ${body}
   console.warn(`server notices skipped (${e.message.split('\n')[0]}); is Rust installed?`);
 }
 
-fs.writeFileSync('ThirdPartyNotices.txt', text + nvencText + serverText);
+fs.writeFileSync('ThirdPartyNotices.txt', text + nvencText + vaText + serverText);
 console.log(`ThirdPartyNotices.txt written (opus-decoder ${opusDecoderVersion}${serverText ? ', desktop server' : ''})`);

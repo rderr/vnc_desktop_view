@@ -4,7 +4,7 @@ A Visual Studio Code extension that shows your remote Windows or Linux machine's
 
 No ports to open, no VPN, nothing to install on your own machine, no setup on the remote.
 
-> **Preview.** Windows 10/11 remotes are supported, and Linux remotes running X11 with an NVIDIA GPU (see [Requirements](#requirements)). macOS remotes are planned.
+> **Preview.** Windows 10/11 remotes are supported, and Linux remotes running X11 with an NVIDIA GPU, or (experimental) an Intel or AMD GPU (see [Requirements](#requirements)). macOS remotes are planned.
 
 ![Remote Desktop View screenshot](resources/remotedesktop.png)
 
@@ -23,7 +23,7 @@ The screen travels through VS Code's own connection to the remote, so whatever a
 The remote desktop is streamed as H.264 video, encoded by the remote machine's GPU and decoded by VS Code on your machine. It only sends frames when something changes, and uses a fraction of the bandwidth of VNC: a few hundred KB/s for everyday use at up to 60 fps.
 
 - **Windows:** the GPU's encoder (Intel Quick Sync, NVIDIA NVENC, AMD — whatever Windows provides), fed straight from video memory. Machines without a hardware encoder use the H.264 encoder built into Windows.
-- **Linux:** NVIDIA's NVENC, at up to 4K.
+- **Linux:** NVIDIA's NVENC, or VA-API on Intel and AMD GPUs (experimental), at up to 4K.
 
 ### Sound
 
@@ -56,11 +56,11 @@ Resolution changes, the Windows lock screen, UAC prompts and GPU resets are hand
 |---|---|
 | System | x64, glibc 2.34 or newer (Ubuntu 22.04+, Debian 12+, Linux Mint 21+, Fedora 35+, RHEL / Rocky 9+) |
 | Desktop session | **X11 (Xorg).** Any desktop environment: Cinnamon, Xfce, MATE, KDE Plasma on X11, GNOME on Xorg, … Wayland sessions aren't supported yet; on GNOME or KDE, pick the X11 / Xorg session on the login screen. |
-| GPU | **NVIDIA** GPU with NVIDIA's driver, version 530 or newer (for NVENC). Intel / AMD GPUs and the open-source nouveau driver aren't supported yet. |
+| GPU | **NVIDIA** GPU with NVIDIA's driver, version 530 or newer (NVENC), or *(experimental, not yet tested on real hardware)* an **Intel or AMD** GPU whose VA-API driver can encode H.264: Intel's `intel-media-va-driver` (iHD) or `i965-va-driver`, or Mesa's `radeonsi` for AMD. Some distributions (e.g. Fedora, openSUSE) build Mesa without H.264 encoding; there you need their "freeworld" Mesa VA drivers. The open-source nouveau driver for NVIDIA isn't supported. |
 | Screen size | At most 4096 × 4096 pixels — all monitors together, since X11 treats them as one screen |
 | Sound (optional) | PulseAudio, or PipeWire with its PulseAudio server (most desktops). Without it, everything but sound works. |
 
-Nothing needs to be installed on Linux: the desktop server only depends on the C library, and uses the NVIDIA driver and the sound server that are already there. It finds the logged-in desktop session itself.
+Nothing needs to be installed on Linux: the desktop server only depends on the C library, and uses the GPU driver and the sound server that are already there. It finds the logged-in desktop session itself. With both an NVIDIA and an Intel / AMD GPU, NVENC is used.
 
 ## Getting Started
 
@@ -85,7 +85,8 @@ Nothing needs to be installed on Linux: the desktop server only depends on the C
 
 - **Windows: lock screen and UAC prompts** can't be shown or controlled yet (Windows reserves them for system processes); the tab shows a notice until the desktop returns
 - **Windows: administrator windows** don't receive mouse and keyboard input while they have focus (Windows blocks input from ordinary programs into elevated ones)
-- **Linux: Wayland, non-NVIDIA GPUs and screens over 4096 pixels** aren't supported yet (see [Requirements](#linux))
+- **Linux: Wayland and screens over 4096 pixels** aren't supported yet (see [Requirements](#linux))
+- **Linux: Intel / AMD GPUs (VA-API)** are experimental and haven't been tested on real hardware yet. If the tab shows an encoder error, please [report it](https://github.com/rderr/vnc_desktop_view/issues) with the **Remote Desktop View** output
 - **Keyboard shortcuts** that VS Code handles itself (such as ⌘W / Ctrl+W) don't reach the remote
 - **After a reboot**, the remote is only reachable once someone has logged in (VS Code's tunnel starts at login)
 
@@ -136,11 +137,11 @@ src/
 server/src/                   # Desktop server (Rust)
 ├── main.rs                   # Capture loop and stdin/stdout protocol
 ├── encoder.rs                # Encoder interface and selection
+├── convert.rs                # CPU color conversion (BGRA -> NV12)
 ├── win/                      # Windows
 │   ├── capture.rs            # DXGI Desktop Duplication
 │   ├── gpu.rs                # BGRA -> NV12 on the GPU
 │   ├── mf.rs                 # Media Foundation H.264 encoders
-│   ├── convert.rs            # CPU color conversion fallback
 │   ├── audio.rs              # WASAPI loopback -> Opus
 │   ├── input.rs              # Mouse and keyboard (SendInput)
 │   └── clipboard.rs          # Clipboard sync
@@ -148,6 +149,7 @@ server/src/                   # Desktop server (Rust)
     ├── display.rs            # Finds the logged-in desktop session
     ├── capture.rs            # MIT-SHM screen grabs, driven by DAMAGE
     ├── nvenc.rs              # NVIDIA NVENC H.264 (nvenc_sys.rs: API bindings)
+    ├── vaapi.rs              # Intel / AMD VA-API H.264 (va_sys.rs: API bindings)
     ├── audio.rs              # PulseAudio monitor -> Opus
     ├── input.rs              # Mouse and keyboard (XTEST)
     └── clipboard.rs          # CLIPBOARD selection sync

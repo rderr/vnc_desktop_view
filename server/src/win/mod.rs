@@ -4,7 +4,6 @@
 pub mod audio;
 pub mod capture;
 pub mod clipboard;
-mod convert;
 mod gpu;
 pub mod input;
 pub mod mf;

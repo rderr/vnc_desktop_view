@@ -14,7 +14,7 @@
 //! encoder gets them copied to system memory and converted on the CPU.
 
 use super::capture::Capturer;
-use super::convert::Converter;
+use crate::convert::Converter;
 use crate::encoder::{MAX_FPS, VideoEncoder, bitrate};
 use super::gpu::Nv12Converter;
 use anyhow::{Context, Result, bail};

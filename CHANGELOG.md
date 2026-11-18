@@ -15,6 +15,7 @@ The desktop is now streamed by the extension's own desktop server instead of VNC
 - On a Mac, ⌘ acts as Ctrl on the remote (`vncDesktopView.commandKey`, or the **⌘ = Ctrl** button)
 - Recovery from resolution changes, the lock screen, UAC prompts and server crashes without closing the tab
 - Linux remotes: X11 desktops with an NVIDIA GPU (NVENC, up to 4K), with input, sound (PulseAudio / PipeWire) and clipboard sync
+- Linux remotes with Intel or AMD GPUs through VA-API (experimental, untested on real hardware)
 
 ### Removed
 - VNC: application mode, full-access mode, custom VNC servers, the test desktop, saved VNC passwords, and the `vncDesktopView.server`, `host`, `port` and `scaleToFit` settings
