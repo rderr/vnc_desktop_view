@@ -1,5 +1,5 @@
-//! macOS: ScreenCaptureKit capture, VideoToolbox H.264, Core Graphics input.
-//! Sound and clipboard aren't implemented yet.
+//! macOS: ScreenCaptureKit capture (picture and sound), VideoToolbox H.264,
+//! Core Graphics input and the general pasteboard.
 
 pub mod audio;
 pub mod capture;

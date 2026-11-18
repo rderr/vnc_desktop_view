@@ -17,7 +17,7 @@ The desktop is now streamed by the extension's own desktop server instead of VNC
 - Linux remotes: X11 desktops with an NVIDIA GPU (NVENC, up to 4K), with input, sound (PulseAudio / PipeWire) and clipboard sync
 - Linux remotes with Intel or AMD GPUs through VA-API (experimental, untested on real hardware)
 - Linux remotes without a usable GPU encoder can use the OpenH264 software encoder, downloaded from Cisco after asking (`vncDesktopView.openH264`)
-- macOS remotes (12.3+): ScreenCaptureKit capture, VideoToolbox hardware H.264, mouse and keyboard input (⌘ stays ⌘)
+- macOS remotes (12.3+): ScreenCaptureKit capture, VideoToolbox hardware H.264, mouse and keyboard input (⌘ stays ⌘), clipboard sync, and sound (macOS 13+)
 - A plain local window (showing your own screen) is view-only, so input can't loop back into the tab
 
 ### Removed

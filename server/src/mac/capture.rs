@@ -133,20 +133,20 @@ pub enum Frame {
 }
 
 /// Runs an API that reports through a completion block, and waits for it.
-fn wait_for<T: Send + 'static>(start: impl FnOnce(mpsc::Sender<T>)) -> Result<T> {
+pub(super) fn wait_for<T: Send + 'static>(start: impl FnOnce(mpsc::Sender<T>)) -> Result<T> {
     let (tx, rx) = mpsc::channel();
     start(tx);
     rx.recv_timeout(Duration::from_secs(10)).map_err(|_| anyhow!("ScreenCaptureKit didn't answer"))
 }
 
-struct Sendable<T>(T);
+pub(super) struct Sendable<T>(pub T);
 // SAFETY: only used to carry ScreenCaptureKit results (thread-safe objects) out of a completion block.
 unsafe impl<T> Send for Sendable<T> {}
 
-impl Capturer {
-    pub fn new() -> Result<Self> {
-        unsafe {
-            let content = wait_for(|tx| {
+/// The display to capture: the main one (with the menu bar).
+pub(super) fn main_display() -> Result<Retained<SCDisplay>> {
+    unsafe {
+        let content = wait_for(|tx| {
                 let block = RcBlock::new(move |content: *mut SCShareableContent, error: *mut NSError| {
                     let result = match (Retained::retain(content), error.as_ref()) {
                         (Some(c), _) => Ok(Sendable(c)),
@@ -159,14 +159,16 @@ impl Capturer {
             })?
             .map_err(|e| anyhow!("{e} (does this program have the Screen Recording permission?)"))?
             .0;
+        let main_id = CGMainDisplayID();
+        let displays = content.displays();
+        displays.iter().find(|d| d.displayID() == main_id).or_else(|| displays.firstObject()).context("no display to capture")
+    }
+}
 
-            let main_id = CGMainDisplayID();
-            let displays = content.displays();
-            let display: Retained<SCDisplay> = displays
-                .iter()
-                .find(|d| d.displayID() == main_id)
-                .or_else(|| displays.firstObject())
-                .context("no display to capture")?;
+impl Capturer {
+    pub fn new() -> Result<Self> {
+        unsafe {
+            let display = main_display()?;
             // Pixel size (Retina displays have more pixels than points).
             let mode: Option<CFRetained<CGDisplayMode>> = CGDisplayCopyDisplayMode(display.displayID());
             let (src_width, src_height) = match &mode {

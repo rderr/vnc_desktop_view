@@ -132,6 +132,7 @@ export class VideoSession {
         break;
       }
       case 'audio':
+        if (this.viewOnly) break; // this computer's own sound would echo through the tab
         this.send(4, Buffer.from([msg.enabled ? 1 : 0]));
         break;
       case 'syncClipboard':
@@ -169,8 +170,8 @@ export class VideoSession {
     void this.post({
       type: 'notice',
       text: this.viewOnly
-        ? 'View only: this tab shows the screen of the computer you are using, so mouse and keyboard input are off (they would ' +
-          'land back in this tab). Connect VS Code to a remote machine to control its desktop.'
+        ? 'View only: this tab shows the screen of the computer you are using, so mouse, keyboard and sound are off (they would ' +
+          'loop back through this tab). Connect VS Code to a remote machine to control its desktop.'
         : null,
     });
     if (process.platform !== 'win32') {

@@ -10,7 +10,7 @@ const opusDecoderVersion = JSON.parse(fs.readFileSync('node_modules/opus-decoder
 const text = `THIRD-PARTY NOTICES
 
 This extension bundles the third-party software listed below (inside
-dist/video.js, and in Windows and Linux packages bin/desktop-server). The files
+dist/video.js, and in Windows, Linux and macOS packages bin/desktop-server). The files
 are used unmodified.
 
 ${rule}
@@ -146,7 +146,8 @@ let serverText = '';
 try {
   // Crates for either platform, each listed once.
   const byId = new Map();
-  for (const d of [...serverDependencies('x86_64-pc-windows-msvc'), ...serverDependencies('x86_64-unknown-linux-gnu')]) {
+  const targets = ['x86_64-pc-windows-msvc', 'x86_64-unknown-linux-gnu', 'aarch64-apple-darwin', 'x86_64-apple-darwin'];
+  for (const d of targets.flatMap((t) => serverDependencies(t))) {
     byId.set(`${d.name} ${d.version}`, d);
   }
   const deps = [...byId.values()].sort((a, b) => a.name.localeCompare(b.name));
@@ -160,7 +161,7 @@ try {
   }
   serverText = `
 ${rule}
-desktop-server (Windows and Linux packages, bin/): Rust crates compiled into it
+desktop-server (Windows, Linux and macOS packages, bin/): Rust crates compiled into it
 ${rule}
 
 ${deps.map((d) => `  ${d.name} ${d.version} — ${d.license}${d.repository ? ` — ${d.repository}` : ''}`).join('\n')}

@@ -4,7 +4,7 @@ A Visual Studio Code extension that shows your remote Windows, Linux or Mac desk
 
 No ports to open, no VPN, nothing to install on your own machine, no setup on the remote.
 
-> **Preview.** Windows 10/11 remotes are supported, and Linux remotes running X11 with an NVIDIA GPU, or (experimental) an Intel or AMD GPU (see [Requirements](#requirements)). macOS remotes show the desktop and take mouse and keyboard input; sound and clipboard sync on macOS are in progress.
+> **Preview.** Windows 10/11 remotes are supported, and Linux remotes running X11 with an NVIDIA GPU, or (experimental) an Intel or AMD GPU (see [Requirements](#requirements)). macOS remotes are supported too.
 
 ![Remote Desktop View screenshot](resources/remotedesktop.png)
 
@@ -71,7 +71,7 @@ On a Linux machine without a usable GPU encoder (for example a virtual machine),
 
 ### macOS
 
-- macOS 12.3 or later (Apple Silicon or Intel)
+- macOS 12.3 or later (Apple Silicon or Intel); sound needs macOS 13
 - Two permissions, granted once in **System Settings → Privacy & Security** on the Mac:
   - **Screen & System Audio Recording**, to see the screen
   - **Accessibility**, to control it
@@ -108,7 +108,7 @@ On a Linux machine without a usable GPU encoder (for example a virtual machine),
 - **Linux: Wayland and screens over 4096 pixels** aren't supported yet (see [Requirements](#linux))
 - **Linux: Intel / AMD GPUs (VA-API)** are experimental and haven't been tested on real hardware yet. If the tab shows an encoder error, please [report it](https://github.com/rderr/vnc_desktop_view/issues) with the **Remote Desktop View** output
 - **Keyboard shortcuts** that VS Code handles itself (such as ⌘W / Ctrl+W) don't reach the remote
-- **Viewing the computer you're using:** in a plain local VS Code window the tab is view-only, because mouse and keyboard input would land back in the tab and repeat endlessly. Over Remote-SSH to your own machine the extension can't tell, so don't type or click in that tab.
+- **Viewing the computer you're using:** in a plain local VS Code window the tab is view-only, because mouse and keyboard input would land back in the tab and repeat endlessly (and sound would echo). Over Remote-SSH to your own machine the extension can't tell, so don't type, click or turn on sound in that tab.
 - **After a reboot**, the remote is only reachable once someone has logged in (VS Code's tunnel starts at login)
 
 ## Development
@@ -170,7 +170,9 @@ server/src/                   # Desktop server (Rust)
 ├── mac/                      # macOS
 │   ├── capture.rs            # ScreenCaptureKit
 │   ├── vt.rs                 # VideoToolbox H.264
-│   └── input.rs              # Mouse and keyboard (Core Graphics events)
+│   ├── audio.rs              # ScreenCaptureKit system audio -> Opus
+│   ├── input.rs              # Mouse and keyboard (Core Graphics events)
+│   └── clipboard.rs          # Pasteboard sync
 └── linux/                    # Linux (X11)
     ├── display.rs            # Finds the logged-in desktop session
     ├── capture.rs            # MIT-SHM screen grabs, driven by DAMAGE
