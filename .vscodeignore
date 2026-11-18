@@ -17,3 +17,4 @@ server/**
 scripts/package.mjs
 scripts/server-notices.mjs
 scripts/openh264-binary-license.txt
+resources/remotedesktop.png
