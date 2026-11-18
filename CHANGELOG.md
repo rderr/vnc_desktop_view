@@ -4,6 +4,14 @@ All notable changes to the Remote Desktop View extension (formerly VNC Desktop V
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-11-17
+
+### Security
+- Your clipboard is sent to the remote only when you paste in the desktop tab (Ctrl+V / ⌘V, Shift+Insert), no longer every time the tab gets focus
+- New setting `vncDesktopView.clipboard` (`both`, `toRemote`, `fromRemote`, `off`): e.g. `toRemote` keeps programs on the remote from changing your clipboard
+- The ⌘-key toggle only accepts its two known values
+- README: granting macOS permissions to `sshd-keygen-wrapper` (for Remote-SSH) applies to every SSH login; Remote Tunnels is recommended
+
 ## [0.2.0] - 2026-11-17
 
 The desktop is now streamed by the extension's own desktop server instead of VNC. The extension is renamed **Remote Desktop View**; its ID and settings prefix are unchanged.

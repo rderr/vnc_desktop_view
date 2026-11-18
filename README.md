@@ -32,7 +32,7 @@ Click **Sound** to hear the remote machine's audio (Opus, low latency).
 
 ### Clipboard Both Ways
 
-Text copied on the remote desktop lands on your clipboard, and your clipboard is sent to the remote when you paste there or switch to the tab.
+Text copied on the remote desktop lands on your clipboard, and your clipboard is sent to the remote when you paste there (Ctrl+V / ⌘V in the tab), never just because you clicked into it. The `vncDesktopView.clipboard` setting limits this to one direction or turns it off.
 
 ### Mac Keyboards
 
@@ -76,7 +76,9 @@ On a Linux machine without a usable GPU encoder (for example a virtual machine),
   - **Screen & System Audio Recording**, to see the screen
   - **Accessibility**, to control it
 
-  Which program needs them depends on how VS Code connects. With **Remote Tunnels**, macOS asks for VS Code's `code` command when the desktop is first opened. With **Remote-SSH**, add `/usr/libexec/sshd-keygen-wrapper` to both lists yourself (click **+**, press **⌘⇧G** and type the path). Someone has to be at the Mac to do this.
+  Which program needs them depends on how VS Code connects. **Remote Tunnels is recommended:** macOS asks for VS Code's `code` command when the desktop is first opened, so only VS Code's tunnel gets the permissions.
+
+  With **Remote-SSH**, the permissions have to go to `/usr/libexec/sshd-keygen-wrapper` (click **+**, press **⌘⇧G** and type the path). **This applies to every SSH login on the Mac**, not only this extension: anyone who can log in over SSH as you could then record and control the screen without the Mac asking. Only do this on a Mac where SSH access is as trusted as sitting at it, and remove the entry when you no longer need it. Someone has to be at the Mac to grant either permission.
 - macOS 15 may now and then ask on the Mac's screen whether to keep allowing screen recording.
 - Large screens are scaled down to fit H.264 at 60 fps (e.g. a 3840×2486 Retina mode is sent as 3670×2376); a 4K display is sent as is.
 
@@ -89,6 +91,7 @@ On a Linux machine without a usable GPU encoder (for example a virtual machine),
 
 | Setting | Default | Description |
 |---------|---------|-------------|
+| `vncDesktopView.clipboard` | `both` | Clipboard sync: `both`, `toRemote` (the remote can't change your clipboard), `fromRemote`, or `off` |
 | `vncDesktopView.commandKey` | `ctrl` | Mac only: what ⌘ sends to the remote desktop (`ctrl`, or `windows` = the Windows / Super key) |
 | `vncDesktopView.openH264` | `ask` | Linux remotes without a usable GPU encoder: use Cisco's OpenH264 software encoder (`ask`, `on`, `off`; `always` uses it even when there is a GPU encoder). *OpenH264 Video Codec provided by Cisco Systems, Inc.* |
 
@@ -98,7 +101,8 @@ On a Linux machine without a usable GPU encoder (for example a virtual machine),
 - **Nothing exposed.** The desktop server runs as your user, only while a desktop tab is open, and talks to the extension over its standard input and output. It opens no network ports.
 - **No changes to the remote machine.** Nothing is installed or configured; the desktop server ships inside the extension.
 - **Downloads.** Only if you choose the OpenH264 software encoder: its library is downloaded once from Cisco (`ciscobinary.openh264.org`), checked against a pinned SHA-256, and kept in the extension's storage folder on the remote machine. Nothing else is ever downloaded.
-- **Clipboard.** Text is synced only while a desktop tab is open, up to 1 MB.
+- **Clipboard.** Text is synced only while a desktop tab is open, up to 1 MB. Your clipboard is sent only when you paste in the tab. Text copied on the remote replaces your clipboard, so a program or web page on the remote could put text there; if you don't trust what runs on the remote, set `vncDesktopView.clipboard` to `toRemote` or `off`.
+- **Access.** The extension opens no network ports and installs no service. Seeing or controlling a desktop requires a VS Code remote connection to that machine, which already allows running any command as you there, and only shows the desktop of the user VS Code is connected as.
 - **Sound.** On Linux the remote's sound is only recorded while **Sound** is on.
 
 ## Known Issues

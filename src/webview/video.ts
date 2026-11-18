@@ -180,9 +180,11 @@ function physicalKey(code: string): string {
 
 function sendKey(e: KeyboardEvent, down: boolean): void {
   // About to paste on the remote: bring its clipboard up to date first. The
-  // extension holds back this keystroke until the sync is done.
+  // extension holds back this keystroke until the sync is done. This is the only
+  // time the local clipboard is sent: never merely because the tab got focus.
   const pasteModifier = remoteMac ? e.metaKey : e.ctrlKey || (isMac && e.metaKey && commandKey === 'ctrl');
-  if (down && e.code === 'KeyV' && pasteModifier) {
+  const paste = (e.code === 'KeyV' && pasteModifier) || (e.code === 'Insert' && e.shiftKey && !remoteMac);
+  if (down && paste) {
     post({ type: 'syncClipboard' });
   }
   const scan = scanCode(physicalKey(e.code));
@@ -199,8 +201,6 @@ function sendKey(e: KeyboardEvent, down: boolean): void {
 canvas.addEventListener('keydown', (e) => sendKey(e, true));
 canvas.addEventListener('keyup', (e) => sendKey(e, false));
 // Losing focus mid-press would leave keys stuck down on the remote.
-// Coming (back) to the desktop, e.g. after copying something on this machine.
-canvas.addEventListener('focus', () => post({ type: 'syncClipboard' }));
 canvas.addEventListener('blur', () => {
   for (const scan of pressed) post({ type: 'key', scan, down: false });
   pressed.clear();

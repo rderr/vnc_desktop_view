@@ -2,7 +2,7 @@
   "name": "vnc-desktop-view",
   "displayName": "Remote Desktop View",
   "description": "See and control your remote Windows, Linux or Mac desktop, with sound and clipboard, in an editor tab over your existing Remote Tunnels / Remote-SSH connection",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "preview": true,
   "license": "MIT",
   "author": "Rob Derr <robjderr@gmail.com>",
@@ -53,6 +53,23 @@
     "configuration": {
       "title": "Remote Desktop View",
       "properties": {
+        "vncDesktopView.clipboard": {
+          "type": "string",
+          "enum": [
+            "both",
+            "toRemote",
+            "fromRemote",
+            "off"
+          ],
+          "enumDescriptions": [
+            "Text copied on the remote lands on your clipboard; your clipboard is sent when you paste in the desktop tab.",
+            "Only send your clipboard to the remote (when you paste there); the remote never changes your clipboard.",
+            "Only take text copied on the remote; your clipboard is never sent.",
+            "No clipboard sync."
+          ],
+          "default": "both",
+          "markdownDescription": "Clipboard sync with the remote desktop. Your clipboard is only sent when you paste (Ctrl+V / ⌘V) in the desktop tab. Choose `toRemote` if programs on the remote shouldn't be able to change your clipboard, `off` for no sync at all."
+        },
         "vncDesktopView.commandKey": {
           "type": "string",
           "enum": [

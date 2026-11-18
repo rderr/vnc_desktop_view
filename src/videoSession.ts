@@ -78,8 +78,9 @@ export class VideoSession {
     void this.post({ type: 'config', commandKey, remoteMac: process.platform === 'darwin' });
   }
 
-  /** Local clipboard -> remote, if it changed since the clipboards last agreed. */
+  /** Local clipboard -> remote (when pasting there), if it changed since the clipboards last agreed. */
   private async syncClipboard(): Promise<void> {
+    if (!clipboardAllows('toRemote')) return;
     try {
       const text = await vscode.env.clipboard.readText();
       if (!text || text === this.clipboardText || Buffer.byteLength(text) > MAX_CLIPBOARD) return;
@@ -140,6 +141,8 @@ export class VideoSession {
         this.keyQueue = this.keyQueue.then(() => this.syncClipboard());
         break;
       case 'setCommandKey':
+        // Only the two known values reach the settings.
+        if (msg.value !== 'ctrl' && msg.value !== 'windows') break;
         void vscode.workspace.getConfiguration('vncDesktopView')
           .update('commandKey', msg.value, vscode.ConfigurationTarget.Global);
         break;
@@ -282,7 +285,8 @@ export class VideoSession {
         const timestamp = Number(payload.readBigUInt64LE(0));
         void this.post({ type: 'audio', timestamp, data: new Uint8Array(payload.subarray(8)) });
       } else if (kind === 4) {
-        // The remote clipboard changed: put it on the local one.
+        // The remote clipboard changed: put it on the local one, if allowed.
+        if (!clipboardAllows('fromRemote')) continue;
         const text = payload.toString('utf8');
         this.clipboardText = text;
         void vscode.env.clipboard.writeText(text);
@@ -367,6 +371,12 @@ function clamp16(v: number): number {
 }
 
 const NOTICE_NO_ENCODER = 3;
+
+/** Whether the vncDesktopView.clipboard setting allows syncing in this direction. */
+function clipboardAllows(direction: 'toRemote' | 'fromRemote'): boolean {
+  const setting = vscode.workspace.getConfiguration('vncDesktopView').get<string>('clipboard', 'both');
+  return setting === 'both' || setting === direction;
+}
 
 /** Banner text for a server NOTICE (null hides the banner). */
 function noticeText(code: number, label: string, detail: string, openH264Error?: string): string | null {
